@@ -126,6 +126,8 @@ if(${VELOX_CODEGEN_SUPPORT})
   add_compile_definitions(CODEGEN_ENABLED=1)
 endif()
 
+add_compile_options(-g -O0)
+
 # MacOSX enables two-level namespace by default:
 # http://mirror.informatimago.com/next/developer.apple.com/releasenotes/DeveloperTools/TwoLevelNamespaces.html
 # Enables -flat_namespace so type_info can be deudplicated across .so boundaries

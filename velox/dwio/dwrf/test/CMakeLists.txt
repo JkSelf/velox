@@ -473,6 +473,7 @@ target_link_libraries(
   velox_dwrf_test_utils
   velox_vector_fuzzer
   velox_vector_test_lib
+  velox_dwio_parquet_reader
   ${VELOX_LINK_LIBS}
   ${FOLLY_WITH_DEPENDENCIES}
   ${FMT}
@@ -481,6 +482,23 @@ target_link_libraries(
   ${ZSTD}
   ${ZLIB_LIBRARIES}
   ${TEST_LINK_LIBS})
+
+  add_executable(velox_parquet_read_dwrf_writer_test ParquetReadAndWriteTest.cpp)
+  
+  target_link_libraries(
+    velox_parquet_read_dwrf_writer_test
+    velox_dwrf_test_utils
+    velox_vector_fuzzer
+    velox_vector_test_lib
+    velox_dwio_parquet_reader
+    ${VELOX_LINK_LIBS}
+    ${FOLLY_WITH_DEPENDENCIES}
+    ${FMT}
+    ${LZ4}
+    ${LZO}
+    ${ZSTD}
+    ${ZLIB_LIBRARIES}
+    ${TEST_LINK_LIBS})
 
 add_executable(velox_dwrf_writer_extended_test WriterExtendedTests.cpp)
 
