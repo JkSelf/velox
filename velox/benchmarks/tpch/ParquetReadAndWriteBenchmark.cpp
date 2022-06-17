@@ -133,26 +133,31 @@ int main(int argc, char** argv) {
   std::string read_path = argv[1];
   std::string write_path = argv[2];
 
-  for (const auto entry : std::filesystem::directory_iterator(read_path)) {
-    // file_name end with .parquet
-    std::string read_file_path = entry.path();
-    std::string ending = "";
-    if (read_file_path.length() >= 7) {
-      ending = read_file_path.substr(read_file_path.length() - 7, 7);
-    }
+  std::string command = "touch " + write_path;
+  system(command.c_str());
 
-    if (ending.compare("parquet") == 0) {
-      // construct the write file path
-      auto last_pos = read_file_path.find_last_of("/");
-      std::string file_name = read_file_path.substr(
-          last_pos + 1, (read_file_path.length() - last_pos));
-      std::string write_file_path = write_path + "/" + file_name;
-      std::string command = "touch " + write_file_path;
-      std::cout << "the read_file_path is " << read_file_path
-                << " and the write file path is " << write_file_path << "\n";
-      system(command.c_str());
+  ReadAndWrite(read_path, write_path);
 
-      ReadAndWrite(read_file_path, write_file_path);
-    }
-  }
+  // for (const auto entry : std::filesystem::directory_iterator(read_path)) {
+  //   // file_name end with .parquet
+  //   std::string read_file_path = entry.path();
+  //   std::string ending = "";
+  //   if (read_file_path.length() >= 7) {
+  //     ending = read_file_path.substr(read_file_path.length() - 7, 7);
+  //   }
+
+  //   if (ending.compare("parquet") == 0) {
+  //     // construct the write file path
+  //     auto last_pos = read_file_path.find_last_of("/");
+  //     std::string file_name = read_file_path.substr(
+  //         last_pos + 1, (read_file_path.length() - last_pos));
+  //     std::string write_file_path = write_path + "/" + file_name;
+  //     std::string command = "touch " + write_file_path;
+  //     std::cout << "the read_file_path is " << read_file_path
+  //               << " and the write file path is " << write_file_path << "\n";
+  //     system(command.c_str());
+
+  //     ReadAndWrite(read_file_path, write_file_path);
+  //   }
+  // }
 }
