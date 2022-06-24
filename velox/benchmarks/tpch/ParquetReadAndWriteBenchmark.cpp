@@ -103,6 +103,7 @@ void ReadAndWrite(std::string read_file_name, std::string write_file_name) {
   auto config = std::make_shared<facebook::velox::dwrf::Config>();
   // set the snappy compression velox only support zlib and zstd
   // config->set(Config::COMPRESSION, CompressionKind::CompressionKind_ZSTD);
+   config->set(facebook::velox::dwrf::Config::ROW_INDEX_STRIDE, static_cast<uint32_t>(32000));
   const int64_t writerMemoryCap = std::numeric_limits<int64_t>::max();
   facebook::velox::dwrf::WriterOptions options;
   options.config = config;
