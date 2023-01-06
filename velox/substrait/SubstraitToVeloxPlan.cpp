@@ -328,7 +328,11 @@ std::shared_ptr<const core::PlanNode> SubstraitVeloxPlanConverter::toVeloxAgg(
         aggregateMask =
             std::dynamic_pointer_cast<const core::FieldAccessTypedExpr>(
                 exprConverter_->toVeloxExpr(substraitAggMask, inputType));
+        VELOX_CHECK(
+            aggregateMask != nullptr,
+            " the agg filter expression in Aggregate Operator only support field");
       }
+
       aggregateMasks.push_back(aggregateMask);
     }
     const auto& aggFunction = smea.measure();
@@ -1619,8 +1623,7 @@ void SubstraitVeloxPlanConverter::setFilterMap(
       if (substraitLit) {
         val = variant(Date(substraitLit.value().date()));
       }
-      setColInfoMap<int>(
-          functionName, colIdxVal, val, reverse, colInfoMap);
+      setColInfoMap<int>(functionName, colIdxVal, val, reverse, colInfoMap);
       break;
     default:
       VELOX_NYI(

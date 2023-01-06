@@ -51,8 +51,8 @@ bool SubstraitToVeloxPlanValidator::validateInputTypes(
 }
 
 bool SubstraitToVeloxPlanValidator::validateRound(
-  const ::substrait::Expression::ScalarFunction& scalarFunction,
-  const RowTypePtr& inputType) {
+    const ::substrait::Expression::ScalarFunction& scalarFunction,
+    const RowTypePtr& inputType) {
   const auto& arguments = scalarFunction.arguments();
   if (arguments.size() < 2) {
     return false;
@@ -68,16 +68,17 @@ bool SubstraitToVeloxPlanValidator::validateRound(
     case ::substrait::Expression_Literal::LiteralTypeCase::kI64:
       return (arguments[1].value().literal().i64() >= 0);
     default:
-      VELOX_NYI("Round scale validation is not supported for type case '{}'", typeCase);
+      VELOX_NYI(
+          "Round scale validation is not supported for type case '{}'",
+          typeCase);
   }
 }
 
 bool SubstraitToVeloxPlanValidator::validateScalarFunction(
     const ::substrait::Expression::ScalarFunction& scalarFunction,
     const RowTypePtr& inputType) {
-  const auto& veloxFunction =
-      subParser_->findVeloxFunction(
-        planConverter_->getFunctionMap(), scalarFunction.function_reference());
+  const auto& veloxFunction = subParser_->findVeloxFunction(
+      planConverter_->getFunctionMap(), scalarFunction.function_reference());
   if (veloxFunction == "round") {
     return validateRound(scalarFunction, inputType);
   }
@@ -87,7 +88,7 @@ bool SubstraitToVeloxPlanValidator::validateScalarFunction(
 bool SubstraitToVeloxPlanValidator::validateExpression(
     const ::substrait::Expression& expression,
     const RowTypePtr& inputType) {
-    std::shared_ptr<const core::ITypedExpr> veloxExpr;
+  std::shared_ptr<const core::ITypedExpr> veloxExpr;
   auto typeCase = expression.rex_type_case();
   switch (typeCase) {
     case ::substrait::Expression::RexTypeCase::kScalarFunction:
@@ -245,8 +246,9 @@ bool SubstraitToVeloxPlanValidator::validate(
               windowFunction.window_type());
       }
 
-      bool boundTypeSupported = validateBoundType(windowFunction.upper_bound()) &&
-       validateBoundType(windowFunction.lower_bound());
+      bool boundTypeSupported =
+          validateBoundType(windowFunction.upper_bound()) &&
+          validateBoundType(windowFunction.lower_bound());
       if (!boundTypeSupported) {
         return false;
       }
@@ -642,6 +644,23 @@ bool SubstraitToVeloxPlanValidator::validate(
   funcSpecs.reserve(sAgg.measures().size());
   for (const auto& smea : sAgg.measures()) {
     try {
+      // Validate the filter expression
+      if (smea.has_filter()) {
+        ::substrait::Expression substraitAggMask = smea.filter();
+        if (smea.filter().ByteSizeLong() > 0) {
+          auto typeCase = substraitAggMask.rex_type_case();
+          switch (typeCase) {
+            case ::substrait::Expression::RexTypeCase::kSelection:
+              break;
+            default:
+              std::cout
+                  << "Only field is supported in aggregate filter expression."
+                  << std::endl;
+              return false;
+          }
+        }
+      }
+
       const auto& aggFunction = smea.measure();
       funcSpecs.emplace_back(
           planConverter_->findFuncSpec(aggFunction.function_reference()));
