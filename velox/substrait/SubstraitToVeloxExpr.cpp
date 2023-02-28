@@ -274,7 +274,7 @@ SubstraitVeloxExprConverter::literalsToConstantExpr(
   VELOX_CHECK(literalType.has_value(), "Type expected.");
   auto varArray = variant::array(variants);
   ArrayVectorPtr arrayVector =
-      variantArrayToVector(*literalType, varArray.array(), pool_);
+      variantArrayToVector(varArray.inferType(), varArray.array(), pool_);
   // Wrap the array vector into constant vector.
   auto constantVector =
       BaseVector::wrapInConstant(1 /*length*/, 0 /*index*/, arrayVector);
