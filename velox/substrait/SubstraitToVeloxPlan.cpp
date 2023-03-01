@@ -1759,6 +1759,7 @@ void SubstraitVeloxPlanConverter::setFilterMap(
       }
       setColInfoMap<int>(functionName, colIdxVal, val, reverse, colInfoMap);
       break;
+  
     default:
       VELOX_NYI(
           "Subfield filters creation not supported for input type '{}'",
@@ -2040,6 +2041,11 @@ connector::hive::SubfieldFilters SubstraitVeloxPlanConverter::mapToFilters(
         constructSubfieldFilters<TypeKind::DATE, common::BigintRange>(
             colIdx, inputNameList[colIdx], colInfoMap[colIdx], filters);
         break;
+      case TypeKind::SHORT_DECIMAL:
+        constructSubfieldFilters<TypeKind::SHORT_DECIMAL, common::BigintRange>(
+            colIdx, inputNameList[colIdx], colInfoMap[colIdx], filters);
+        break;
+
       default:
         VELOX_NYI(
             "Subfield filters creation not supported for input type '{}'",
