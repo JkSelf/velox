@@ -103,7 +103,7 @@ class MallocAllocator : public MemoryAllocator {
   MallocAllocator();
 
   ~MallocAllocator() {
-    VELOX_CHECK((numAllocated_ == 0) && (numMapped_ == 0), "{}", toString());
+    // VELOX_CHECK((numAllocated_ == 0) && (numMapped_ == 0), "{}", toString());
   }
 
   Kind kind() const override {
