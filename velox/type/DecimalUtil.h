@@ -215,6 +215,178 @@ class DecimalUtil {
     }
   }
 
+  inline static int32_t FirstNonzeroLongNum(
+      const std::vector<int32_t>& mag,
+      int32_t length) {
+    int32_t fn = 0;
+    int32_t i;
+    for (i = length - 1; i >= 0 && mag[i] == 0; i--)
+      ;
+    fn = length - i - 1;
+    return fn;
+  }
+
+  inline static int32_t GetInt(
+      int32_t n,
+      int32_t sig,
+      const std::vector<int32_t>& mag,
+      int32_t length) {
+    if (n < 0)
+      return 0;
+    if (n >= length)
+      return sig < 0 ? -1 : 0;
+
+    int32_t magInt = mag[length - n - 1];
+    return (
+        sig >= 0 ? magInt
+                 : (n <= FirstNonzeroLongNum(mag, length) ? -magInt : ~magInt));
+  }
+
+  inline static int32_t GetNumberOfLeadingZeros(uint32_t i) {
+    // TODO: we can get faster implementation by gcc build-in function
+    // HD, Figure 5-6
+    if (i == 0)
+      return 32;
+    int32_t n = 1;
+    if (i >> 16 == 0) {
+      n += 16;
+      i <<= 16;
+    }
+    if (i >> 24 == 0) {
+      n += 8;
+      i <<= 8;
+    }
+    if (i >> 28 == 0) {
+      n += 4;
+      i <<= 4;
+    }
+    if (i >> 30 == 0) {
+      n += 2;
+      i <<= 2;
+    }
+    n -= i >> 31;
+    return n;
+  }
+
+  inline static int32_t GetBitLengthForInt(uint32_t n) {
+    return 32 - GetNumberOfLeadingZeros(n);
+  }
+
+  inline static int32_t GetBitCount(uint32_t i) {
+    // HD, Figure 5-2
+    i = i - ((i >> 1) & 0x55555555);
+    i = (i & 0x33333333) + ((i >> 2) & 0x33333333);
+    i = (i + (i >> 4)) & 0x0f0f0f0f;
+    i = i + (i >> 8);
+    i = i + (i >> 16);
+    return i & 0x3f;
+  }
+
+  inline static int32_t
+  GetBitLength(int32_t sig, const std::vector<int32_t>& mag, int32_t len) {
+    int32_t n = -1;
+    if (len == 0) {
+      n = 0;
+    } else {
+      // Calculate the bit length of the magnitude
+      int32_t mag_bit_length =
+          ((len - 1) << 5) + GetBitLengthForInt((uint32_t)mag[0]);
+      if (sig < 0) {
+        // Check if magnitude is a power of two
+        bool pow2 = (GetBitCount((uint32_t)mag[0]) == 1);
+        for (int i = 1; i < len && pow2; i++)
+          pow2 = (mag[i] == 0);
+
+        n = (pow2 ? mag_bit_length - 1 : mag_bit_length);
+      } else {
+        n = mag_bit_length;
+      }
+    }
+    return n;
+  }
+
+  static std::vector<uint32_t>
+  ConvertMagArray(int64_t new_high, uint64_t new_low, int32_t* size) {
+    std::vector<uint32_t> mag;
+    int64_t orignal_low = new_low;
+    int64_t orignal_high = new_high;
+    mag.push_back(new_high >>= 32);
+    mag.push_back((uint32_t)orignal_high);
+    mag.push_back(new_low >>= 32);
+    mag.push_back((uint32_t)orignal_low);
+
+    int32_t start = 0;
+    // remove the front 0
+    for (int32_t i = 0; i < 4; i++) {
+      if (mag[i] == 0)
+        start++;
+      if (mag[i] != 0)
+        break;
+    }
+
+    int32_t length = 4 - start;
+    std::vector<uint32_t> new_mag;
+    // get the mag after remove the high 0
+    for (int32_t i = start; i < 4; i++) {
+      new_mag.push_back(mag[i]);
+    }
+
+    *size = length;
+    return new_mag;
+  }
+
+  /*
+   *  This method refer to the BigInterger#toByteArray() method in Java side.
+   */
+  inline static char* ToByteArray(int128_t value) {
+    int128_t new_value;
+    int32_t sig;
+    if (value > 0) {
+      new_value = value;
+      sig = 1;
+    } else if (value < 0) {
+      new_value = abs(value);
+      sig = -1;
+    } else {
+      new_value = value;
+      sig = 0;
+    }
+
+    int64_t new_high;
+    uint64_t new_low;
+
+    int128_t orignal_value = new_value;
+    new_high = new_value >> 64;
+    new_low = (uint64_t)orignal_value;
+
+    std::vector<uint32_t> mag;
+    int32_t size;
+    mag = ConvertMagArray(new_high, new_low, &size);
+
+    std::vector<int32_t> final_mag;
+    for (auto i = 0; i < size; i++) {
+      final_mag.push_back(mag[i]);
+    }
+
+    int32_t byte_length = GetBitLength(sig, final_mag, size) / 8 + 1;
+
+    char* out = new char[16];
+    uint32_t next_int = 0;
+    for (int32_t i = byte_length - 1, bytes_copied = 4, int_index = 0; i >= 0;
+         i--) {
+      if (bytes_copied == 4) {
+        next_int = GetInt(int_index++, sig, final_mag, size);
+        bytes_copied = 1;
+      } else {
+        next_int >>= 8;
+        bytes_copied++;
+      }
+
+      out[i] = (uint8_t)next_int;
+    }
+    return out;
+  }
+
   static constexpr __uint128_t kOverflowMultiplier = ((__uint128_t)1 << 127);
 }; // DecimalUtil
 } // namespace facebook::velox
