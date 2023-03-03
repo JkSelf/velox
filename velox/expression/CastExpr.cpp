@@ -143,6 +143,32 @@ void applyBigintToDecimalCastKernel(
     }
   });
 }
+
+template <typename TOutput>
+void applyDoubleToDecimalCastKernel(
+    const SelectivityVector& rows,
+    const BaseVector& input,
+    exec::EvalCtx& context,
+    const TypePtr& toType,
+    VectorPtr castResult,
+    const bool nullOnFailure) {
+  auto sourceVector = input.as<SimpleVector<double>>();
+  auto castResultRawBuffer =
+      castResult->asUnchecked<FlatVector<TOutput>>()->mutableRawValues();
+  const auto& toPrecisionScale = getDecimalPrecisionScale(*toType);
+  context.applyToSelectedNoThrow(rows, [&](vector_size_t row) {
+    auto rescaledValue = DecimalUtil::rescaleBigint<TOutput>(
+        sourceVector->valueAt(row),
+        toPrecisionScale.first,
+        toPrecisionScale.second,
+        nullOnFailure);
+    if (rescaledValue.has_value()) {
+      castResultRawBuffer[row] = rescaledValue.value();
+    } else {
+      castResult->setNull(row, true);
+    }
+  });
+}
 } // namespace
 
 template <typename To, typename From>
@@ -547,6 +573,17 @@ VectorPtr CastExpr::applyDecimal(
             rows, input, context, toType, castResult, nullOnFailure_);
       } else {
         applyBigintToDecimalCastKernel<UnscaledLongDecimal>(
+            rows, input, context, toType, castResult, nullOnFailure_);
+      }
+      break;
+    }
+
+    case TypeKind::DOUBLE: {
+      if (toType->kind() == TypeKind::SHORT_DECIMAL) {
+        applyDoubleToDecimalCastKernel<UnscaledShortDecimal>(
+            rows, input, context, toType, castResult, nullOnFailure_);
+      } else {
+        applyDoubleToDecimalCastKernel<UnscaledLongDecimal>(
             rows, input, context, toType, castResult, nullOnFailure_);
       }
       break;
