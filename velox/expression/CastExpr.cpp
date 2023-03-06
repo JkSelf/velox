@@ -54,25 +54,47 @@ void applyCastKernel(
     if (nullOutput) {
       resultFlatVector->setNull(row, true);
     } else {
-      auto output =
-          util::Converter<CppToType<To>::typeKind, void, Truncate>::cast(
-              inputVector->valueAt(row), nullOutput);
+      std::string result;
+      if constexpr (
+          CppToType<From>::typeKind == TypeKind::SHORT_DECIMAL ||
+          CppToType<From>::typeKind == TypeKind::LONG_DECIMAL) {
+        result = util::Converter<CppToType<To>::typeKind, void, Truncate>::cast(
+            inputVector->valueAt(row), nullOutput, input.type());
+
+      } else {
+        result = util::Converter<CppToType<To>::typeKind, void, Truncate>::cast(
+            inputVector->valueAt(row), nullOutput);
+      }
+
       // Write the result output to the output vector
       auto writer = exec::StringWriter<>(resultFlatVector, row);
-      writer.resize(output.size());
-      if (output.size()) {
-        std::memcpy(writer.data(), output.data(), output.size());
+      writer.resize(result.size());
+      if (result.size()) {
+        std::memcpy(writer.data(), result.data(), result.size());
       }
       writer.finalize();
     }
   } else {
-    auto result =
-        util::Converter<CppToType<To>::typeKind, void, Truncate>::cast(
-            inputVector->valueAt(row), nullOutput);
-    if (nullOutput) {
-      resultFlatVector->setNull(row, true);
+    if constexpr (
+        CppToType<From>::typeKind == TypeKind::SHORT_DECIMAL ||
+        CppToType<From>::typeKind == TypeKind::LONG_DECIMAL) {
+      auto result =
+          util::Converter<CppToType<To>::typeKind, void, Truncate>::cast(
+              inputVector->valueAt(row), nullOutput, input.type());
+      if (nullOutput) {
+        resultFlatVector->setNull(row, true);
+      } else {
+        resultFlatVector->set(row, result);
+      }
     } else {
-      resultFlatVector->set(row, result);
+      auto result =
+          util::Converter<CppToType<To>::typeKind, void, Truncate>::cast(
+              inputVector->valueAt(row), nullOutput);
+      if (nullOutput) {
+        resultFlatVector->setNull(row, true);
+      } else {
+        resultFlatVector->set(row, result);
+      }
     }
   }
 }
@@ -336,6 +358,15 @@ void CastExpr::applyCast(
       return applyCastWithTry<To, Timestamp>(
           rows, context, input, resultFlatVector);
     }
+    case TypeKind::SHORT_DECIMAL: {
+      return applyCastWithTry<To, UnscaledShortDecimal>(
+          rows, context, input, resultFlatVector);
+    }
+    case TypeKind::LONG_DECIMAL: {
+      return applyCastWithTry<To, UnscaledLongDecimal>(
+          rows, context, input, resultFlatVector);
+    }
+
     default: {
       VELOX_UNSUPPORTED("Invalid from type in casting: {}", fromType);
     }

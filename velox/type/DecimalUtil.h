@@ -23,6 +23,8 @@
 #include "velox/type/UnscaledLongDecimal.h"
 #include "velox/type/UnscaledShortDecimal.h"
 
+#include <iostream>
+
 namespace facebook::velox {
 
 #define LOWER(x) ((uint64_t)x)
@@ -387,6 +389,94 @@ class DecimalUtil {
     return out;
   }
 
+  /*
+   *  This method refer to the BigInterger#compactValFor() method in Java side.
+   */
+  inline static double compactValFor(int128_t value) {
+    int128_t new_value;
+    int32_t sig;
+    if (value > 0) {
+      new_value = value;
+      sig = 1;
+    } else if (value < 0) {
+      new_value = abs(value);
+      sig = -1;
+    } else {
+      new_value = value;
+      sig = 0;
+    }
+
+    int64_t new_high;
+    uint64_t new_low;
+
+    int128_t orignal_value = new_value;
+    new_high = new_value >> 64;
+    new_low = (uint64_t)orignal_value;
+
+    std::vector<uint32_t> mag;
+    int32_t size;
+    mag = ConvertMagArray(new_high, new_low, &size);
+
+    std::vector<int32_t> final_mag;
+    for (auto i = 0; i < size; i++) {
+      final_mag.push_back(mag[i]);
+    }
+
+    int32_t len = final_mag.size();
+    if (len == 0)
+      return 0;
+    int d = final_mag[0];
+    if (len > 2 || (len == 2 && d < 0))
+      return kLongMinValue; // long min value
+
+    long u = (len == 2)
+        ? (((long)final_mag[1] & kLONG_MASK) + (((long)d) << 32))
+        : (((long)d) & kLONG_MASK);
+    return (sig < 0) ? -u : u;
+  }
+
+  inline static double toDoubleValue(int128_t value, uint8_t scale) {
+    auto intCompact = compactValFor(value);
+
+    if (intCompact != kLongMinValue) {
+      if (scale == 0) {
+        return (double)intCompact;
+      } else {
+        /*
+         * If both intCompact and the scale can be exactly
+         * represented as double values, perform a single
+         * double multiply or divide to compute the (properly
+         * rounded) result.
+         */
+        if (abs(intCompact) < 1L << 52) {
+          // Don't have too guard against
+          // Math.abs(MIN_VALUE) because of outer check
+          // against INFLATED.
+          if (scale > 0 &&
+              scale < sizeof(double10pow) / sizeof(double10pow[0])) {
+            return (double)intCompact / double10pow[scale];
+          } else if (
+              scale < 0 &&
+              scale > sizeof(double10pow) / sizeof(double10pow[0])) {
+            return (double)intCompact * double10pow[-scale];
+          }
+        }
+      }
+    }
+    return -1;
+    // Somewhat inefficient, but guaranteed to work.
+    // TODO :: implement toString first;
+    // return Double.parseDouble(this.toString());
+  }
+
+  static constexpr double double10pow[] = {
+      1.0e0,  1.0e1,  1.0e2,  1.0e3,  1.0e4,  1.0e5,  1.0e6,  1.0e7,
+      1.0e8,  1.0e9,  1.0e10, 1.0e11, 1.0e12, 1.0e13, 1.0e14, 1.0e15,
+      1.0e16, 1.0e17, 1.0e18, 1.0e19, 1.0e20, 1.0e21, 1.0e22};
+
   static constexpr __uint128_t kOverflowMultiplier = ((__uint128_t)1 << 127);
+  static constexpr long kLongMinValue = 0x8000000000000000L;
+  static constexpr long kLONG_MASK = 0xffffffffL;
+
 }; // DecimalUtil
 } // namespace facebook::velox
