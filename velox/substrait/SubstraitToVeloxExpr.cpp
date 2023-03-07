@@ -17,8 +17,10 @@
 #include "velox/substrait/SubstraitToVeloxExpr.h"
 #include "velox/substrait/TypeUtils.h"
 #include "velox/substrait/VariantToVectorConverter.h"
+#include "velox/type/DecimalUtil.h"
 #include "velox/vector/FlatVector.h"
 #include "velox/vector/VariantToVector.h"
+
 using namespace facebook::velox;
 namespace {
 // Get values for the different supported types.
@@ -354,6 +356,22 @@ SubstraitVeloxExprConverter::toVeloxExpr(
     case ::substrait::Expression_Literal::LiteralTypeCase::kBinary:
       return std::make_shared<core::ConstantTypedExpr>(
           VARBINARY(), variant::binary(substraitLit.binary()));
+    case ::substrait::Expression_Literal::LiteralTypeCase::kDecimal: {
+      auto decimal = substraitLit.decimal().value();
+      auto precision = substraitLit.decimal().precision();
+      auto scale = substraitLit.decimal().scale();
+      int128_t decimalValue = DecimalUtil::toInt128(
+          decimal.c_str(), decimal.size(), precision, scale);
+      if (precision <= 18) {
+        auto type = SHORT_DECIMAL(precision, scale);
+        return std::make_shared<core::ConstantTypedExpr>(
+            type, variant::shortDecimal((int64_t)decimalValue, type));
+      } else {
+        auto type = LONG_DECIMAL(precision, scale);
+        return std::make_shared<core::ConstantTypedExpr>(
+            type, variant::longDecimal(decimalValue, type));
+      }
+    }
     default:
       VELOX_NYI(
           "Substrait conversion not supported for type case '{}'", typeCase);
