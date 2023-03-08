@@ -616,33 +616,6 @@ bool SubstraitToVeloxPlanValidator::validateAggRelFunctionType(
     return true;
   }
 
-  // Extract the precision and scale for decimal in extension info.
-  const auto& extension = sAgg.advanced_extension();
- 
-  std::vector<std::shared_ptr<DecimalInfo>> precisions;
-  if (extension.has_optimization()) {
-    google::protobuf::StringValue msg;
-    extension.optimization().UnpackTo(&msg);
-    
-    std::string decimalStr = msg.value();
-
-    std::size_t start = decimalStr.find_first_of('<');
-    std::size_t end = decimalStr.find_last_of('>');
-    while (start != std::string::npos && end != std::string::npos) {
-      auto precisionAndScale = decimalStr.substr(start + 1, end - start -1);
-      int32_t pos = precisionAndScale.find(',');
-      auto precision = precisionAndScale.substr(0, pos);
-      auto scale = precisionAndScale.substr(pos + 1, precisionAndScale.size() - 1);
-      auto decimalInfo = std::make_shared<DecimalInfo>();
-      decimalInfo->precision = stoi(precision);
-      decimalInfo->scale = stoi(scale);
-
-      precisions.emplace_back(decimalInfo);
-      decimalStr.erase(0, end);
-      start = decimalStr.find_first_of('<');
-      end = decimalStr.find_last_of('>');
-    }
-  }
   core::AggregationNode::Step step = planConverter_->toAggregationStep(sAgg);
   for (const auto& smea : sAgg.measures()) {
     const auto& aggFunction = smea.measure();
@@ -656,11 +629,14 @@ bool SubstraitToVeloxPlanValidator::validateAggRelFunctionType(
       types.reserve(funcTypes.size());
       auto index = 0;
       for (auto& type : funcTypes) {
-        if (type == "dec" && precisions.size() > 0) {
-          auto decimalInfo = precisions[index++];
-          auto precision = decimalInfo->precision;
-          auto scale = decimalInfo->scale;
-
+        if (type.find("dec") != std::string::npos) {
+          // dec info is as dec<precision,scale>
+          auto precisionStart = type.find_first_of('<');
+          auto tokenIndex = type.find_first_of(',');
+          auto scaleStart = type.find_first_of('>');
+          auto precision = stoi(type.substr(precisionStart + 1, (tokenIndex - precisionStart - 1)));
+          auto scale = stoi(type.substr(tokenIndex + 1, (scaleStart - tokenIndex - 1)));
+         
           if (precision <= 18) {
             types.emplace_back(SHORT_DECIMAL(precision, scale));
           } else {
@@ -668,7 +644,7 @@ bool SubstraitToVeloxPlanValidator::validateAggRelFunctionType(
           }
         } else {
           types.emplace_back(toVeloxType(subParser_->parseType(type)));
-        }
+        } 
         
       }
     } catch (const VeloxException& err) {
