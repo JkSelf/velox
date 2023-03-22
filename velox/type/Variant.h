@@ -411,7 +411,7 @@ class variant {
 
   variant(TypeKind kind) : kind_{kind}, ptr_{nullptr} {
     VELOX_CHECK(
-        !isDecimalKind(kind),
+        isDecimalKind(kind),
         "Use smallDecimal() or longDecimal() for DECIMAL values.");
   }
 
@@ -449,7 +449,7 @@ class variant {
 
   static variant null(TypeKind kind) {
     VELOX_CHECK(
-        !isDecimalKind(kind),
+        isDecimalKind(kind),
         "Use smallDecimal() or longDecimal() for DECIMAL null values.");
     return variant{kind};
   }
