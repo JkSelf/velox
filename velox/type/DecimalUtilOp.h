@@ -55,11 +55,15 @@ class DecimalUtilOp {
     auto value = num.unscaledValue();
     auto valueAbs = std::abs(value);
     int32_t num_occupied = 0;
-    uint64_t hi = valueAbs >> 64;
-    uint64_t lo = static_cast<uint64_t>(valueAbs);
-    num_occupied = (hi == 0)
-        ? 64 - bits::countLeadingZeros(lo) // same as UnscaledShortDecimal
-        : 64 - bits::countLeadingZeros(hi);
+    if constexpr (std::is_same_v<A, UnscaledShortDecimal>) {
+      num_occupied = 64 - bits::countLeadingZeros(valueAbs);
+    } else {
+      uint64_t hi = valueAbs >> 64;
+      uint64_t lo = static_cast<uint64_t>(valueAbs);
+      num_occupied = (hi == 0) ? 64 - bits::countLeadingZeros(lo)
+                               : 64 - bits::countLeadingZeros(hi);
+    }
+
     return num_occupied + maxBitsRequiredIncreaseAfterScaling(aRescale);
   }
 
@@ -146,7 +150,7 @@ class DecimalUtilOp {
       r = quotient * resultSign;
       return remainder;
     } else if constexpr (
-      // Derives from Arrow BasicDecimal128 Divide
+        // Derives from Arrow BasicDecimal128 Divide
         std::is_same_v<R, UnscaledShortDecimal> ||
         std::is_same_v<R, UnscaledLongDecimal>) {
       // std::cout << "overflow the int128_t, convert to int256_t to / "
