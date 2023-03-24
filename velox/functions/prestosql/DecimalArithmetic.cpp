@@ -43,11 +43,13 @@ class DecimalBaseFunction : public exec::VectorFunction {
       VectorPtr& result) const override {
     // Firstly, we get velox result which has computed new type, and then
     // rescale to left type
-    std::cout << "args[0] " << args[0]->type()->toString() << std::endl;
-    std::cout << "args[0] " << args[0]->toString(0, 5) << std::endl;
-    std::cout << "args[1] " << args[1]->type()->toString() << std::endl;
-    std::cout << "args[1] " << args[1]->toString(0, 5) << std::endl;
-    uint8_t tmp = Operation::computeRescaleFactor(0, 0, 0);
+
+    // std::cout << "args[0] " << args[0]->type()->toString() << std::endl;
+    // std::cout << "args[0] " << args[0]->toString(0, 5) << std::endl;
+    // std::cout << "args[1] " << args[1]->type()->toString() << std::endl;
+    // std::cout << "args[1] " << args[1]->toString(0, 5) << std::endl;
+    // uint8_t tmp = Operation::computeRescaleFactor(0, 0, 0);
+    
     // Here we can not use `resultType`, because this type derives from
     // substrait plan in spark spark arithmetic result type is left datatype,
     // but velox need new computed type
@@ -96,7 +98,7 @@ class DecimalBaseFunction : public exec::VectorFunction {
       });
     }
 
-    std::cout << "result " << result->toString(0, 5) << std::endl;
+    // std::cout << "result " << result->toString(0, 5) << std::endl;
   }
 
  private:
@@ -143,7 +145,7 @@ class Addition {
 
   inline static uint8_t
   computeRescaleFactor(uint8_t fromScale, uint8_t toScale, uint8_t rScale = 0) {
-    std::cout << "add" << std::endl;
+    // std::cout << "add" << std::endl;
     return std::max(0, toScale - fromScale);
   }
 
@@ -190,7 +192,7 @@ class Subtraction {
 
   inline static uint8_t
   computeRescaleFactor(uint8_t fromScale, uint8_t toScale, uint8_t rScale = 0) {
-    std::cout << "-" << std::endl;
+    // std::cout << "-" << std::endl;
     return std::max(0, toScale - fromScale);
   }
 
@@ -216,7 +218,7 @@ class Multiply {
 
   inline static uint8_t
   computeRescaleFactor(uint8_t fromScale, uint8_t toScale, uint8_t rScale = 0) {
-    std::cout << "*" << std::endl;
+    // std::cout << "*" << std::endl;
     return 0;
   }
 
@@ -239,7 +241,7 @@ class Divide {
 
   inline static uint8_t
   computeRescaleFactor(uint8_t fromScale, uint8_t toScale, uint8_t rScale) {
-    std::cout << "/" << std::endl;
+    // std::cout << "/" << std::endl;
     return rScale - fromScale + toScale;
   }
 
@@ -256,8 +258,6 @@ class Divide {
       precision = 38;
       scale = std::max(scale - delta, min_scale);
     }
-    std::cout << "precision is " << precision << " scale is " << scale
-              << std::endl;
     return {precision, scale};
   }
 };
@@ -334,8 +334,6 @@ std::shared_ptr<exec::VectorFunction> createDecimalFunction(
       aPrecision, aScale, bPrecision, bScale);
   uint8_t aRescale = Operation::computeRescaleFactor(aScale, bScale, rScale);
   uint8_t bRescale = Operation::computeRescaleFactor(bScale, aScale, rScale);
-  std::cout << "arithmetic type " << aType->toString() << " "
-            << bType->toString() << " rPrecision " << rPrecision << std::endl;
   if (aType->kind() == TypeKind::SHORT_DECIMAL) {
     if (bType->kind() == TypeKind::SHORT_DECIMAL) {
       if (rPrecision > DecimalType<TypeKind::SHORT_DECIMAL>::kMaxPrecision) {

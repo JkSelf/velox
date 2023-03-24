@@ -25,7 +25,6 @@
 #include "velox/type/UnscaledShortDecimal.h"
 
 #include <boost/multiprecision/cpp_int.hpp>
-#include <iostream>
 
 namespace facebook::velox {
 using boost::multiprecision::int256_t;
@@ -138,7 +137,6 @@ class DecimalUtilOp {
     }
     auto bitsRequiredAfterScaling = maxBitsRequiredAfterScaling<A>(a, aRescale);
 
-    // std::cout << "num bits " << bitsRequiredAfterScaling << std::endl;
     if (bitsRequiredAfterScaling <= 127) {
       unsignedDividendRescaled = checkedMultiply<R>(
           unsignedDividendRescaled, R(DecimalUtil::kPowersOfTen[aRescale]));
@@ -150,16 +148,15 @@ class DecimalUtilOp {
       r = quotient * resultSign;
       return remainder;
     } else if constexpr (
-        // Derives from Arrow BasicDecimal128 Divide
         std::is_same_v<R, UnscaledShortDecimal> ||
         std::is_same_v<R, UnscaledLongDecimal>) {
-      // std::cout << "overflow the int128_t, convert to int256_t to / "
-      //           << std::endl;
+      // Derives from Arrow BasicDecimal128 Divide
       if (aRescale > 38 && bitsRequiredAfterScaling > 255) {
-        VELOX_FAIL("Decimal overflow because rescale {} > 38", aRescale);
+        VELOX_FAIL(
+            "Decimal overflow because rescale {} > 38 and bitsRequiredAfterScaling {} > 255",
+            aRescale,
+            bitsRequiredAfterScaling);
       }
-      // auto doubleValue = toDoubleValue(a.unscaledValue(), aRescale);
-      // auto quotient = doubleValue / b.unscaledValue();
       int256_t aLarge = a.unscaledValue();
       int256_t x_large_scaled_up = aLarge * DecimalUtil::kPowersOfTen[aRescale];
       int256_t y_large = b.unscaledValue();
