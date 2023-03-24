@@ -313,7 +313,6 @@ std::shared_ptr<exec::VectorFunction> createDecimalFunction(
   auto bType = inputArgs[1].type;
   auto [aPrecision, aScale] = getDecimalPrecisionScale(*aType);
   auto [bPrecision, bScale] = getDecimalPrecisionScale(*bType);
-
   auto [rPrecision, rScale] = Operation::computeResultPrecisionScale(
       aPrecision, aScale, bPrecision, bScale);
   uint8_t aRescale = Operation::computeRescaleFactor(aScale, bScale, rScale);
