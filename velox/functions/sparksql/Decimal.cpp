@@ -260,7 +260,7 @@ class AbsFunction final : public exec::VectorFunction {
       auto result = resultRef->asUnchecked<FlatVector<UnscaledShortDecimal>>()
                         ->mutableRawValues();
       rows.applyToSelected([&](int row) {
-        auto unscaled = abs(decimalVector->valueAt<int64_t>(row));
+        auto unscaled = std::abs(decimalVector->valueAt<int64_t>(row));
         if (UnscaledShortDecimal::valueInRange(unscaled)) {
           result[row] = UnscaledShortDecimal(unscaled);
         } else {
@@ -277,25 +277,9 @@ class AbsFunction final : public exec::VectorFunction {
       auto result = resultRef->asUnchecked<FlatVector<UnscaledLongDecimal>>()
                         ->mutableRawValues();
       rows.applyToSelected([&](int row) {
-        auto unscaled = decimalVector->valueAt<int128_t>(row);
-        int128_t absValue;
-        if (unscaled < 0) {
-          uint64_t lowBits;
-          memcpy(&lowBits, &unscaled, sizeof(uint64_t));
-          int64_t highBits = unscaled >> 64;
-          uint64_t resLow = ~lowBits + 1;
-          int64_t resHigh = ~highBits;
-          if (resLow == 0) {
-            resHigh = checkedPlus<int64_t>(resHigh, 1);
-          }
-          auto bits = reinterpret_cast<uint8_t*>(&absValue);
-          memcpy(bits, &resLow, sizeof(uint64_t));
-          memcpy(bits + sizeof(uint64_t), &resHigh, sizeof(int64_t));
-        } else {
-          absValue = unscaled;
-        }
-        if (UnscaledLongDecimal::valueInRange(absValue)) {
-          result[row] = UnscaledLongDecimal(absValue);
+        auto unscaled = std::abs(decimalVector->valueAt<int128_t>(row));
+        if (UnscaledLongDecimal::valueInRange(unscaled)) {
+          result[row] = UnscaledLongDecimal(unscaled);
         } else {
           // TODO: adjust the bahavior according to ANSI.
           resultRef->setNull(row, true);
