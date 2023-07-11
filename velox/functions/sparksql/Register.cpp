@@ -82,6 +82,10 @@ void registerExpressionGeneralFunctions(const std::string& prefix) {
       makeUnscaledValue());
 }
 
+void registerAllSpecialFormGeneralFunctions() {
+  VELOX_REGISTER_VECTOR_FUNCTION(udf_decimal_round, "decimal_round");
+}
+
 void registerFunctions(const std::string& prefix) {
   registerFunction<RandFunction, double>({prefix + "rand"});
 
@@ -168,6 +172,7 @@ void registerFunctions(const std::string& prefix) {
   // VELOX_REGISTER_VECTOR_FUNCTION macro, which must be invoked in the same
   // namespace as the function definition.
   workAroundRegistrationMacro(prefix);
+  registerAllSpecialFormGeneralFunctions();
 
   // These groups of functions involve instantiating many templates. They're
   // broken out into a separate compilation unit to improve build latency.
