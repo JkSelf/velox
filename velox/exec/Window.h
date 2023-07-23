@@ -59,7 +59,7 @@ class Window : public Operator {
     return finished_;
   }
 
- private:
+ protected:
   // Used for k preceding/following frames. Index is the column index if k is a
   // column. value is used to read column values from the column index when k
   // is a column. The field constant stores constant k values.
@@ -91,7 +91,7 @@ class Window : public Operator {
 
   // Helper function to create the buffers for peer and frame
   // row indices to send in window function apply invocations.
-  void createPeerAndFrameBuffers();
+  virtual void createPeerAndFrameBuffers();
 
   // Function to compute the partitionStartRows_ structure.
   // partitionStartRows_ is vector of the starting rows index
@@ -131,7 +131,7 @@ class Window : public Operator {
   // Helper function to compare the rows at lhs and rhs pointers
   // using the keyInfo in keys. This can be used to compare the
   // rows for partitionKeys, orderByKeys or a combination of both.
-  inline bool compareRowsWithKeys(
+  bool compareRowsWithKeys(
       const char* lhs,
       const char* rhs,
       const std::vector<std::pair<column_index_t, core::SortOrder>>& keys);
@@ -321,6 +321,9 @@ class Window : public Operator {
 
   // Tracks how far along the partition rows have been output.
   vector_size_t partitionOffset_ = 0;
+
+  // Number of partitions.
+  vector_size_t numPartitions_ = 0;
 };
 
 } // namespace facebook::velox::exec

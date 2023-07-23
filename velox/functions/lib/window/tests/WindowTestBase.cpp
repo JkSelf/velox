@@ -23,6 +23,12 @@
 #include "velox/exec/tests/utils/PlanBuilder.h"
 #include "velox/vector/fuzzer/VectorFuzzer.h"
 
+#include <string>
+#include <vector>
+#include <sstream>
+
+DECLARE_bool(EnableStreamingWindow);
+
 using namespace facebook::velox::exec::test;
 
 namespace facebook::velox::window::test {
@@ -39,6 +45,51 @@ WindowTestBase::QueryInfo WindowTestBase::buildWindowQuery(
                 .values(input)
                 .window({functionSql})
                 .planNode();
+
+  auto rowType = asRowType(input[0]->type());
+  std::string columnsString = folly::join(", ", rowType->names());
+  std::string querySql =
+      fmt::format("SELECT {}, {} FROM tmp", columnsString, functionSql);
+
+  return {op, functionSql, querySql};
+}
+
+WindowTestBase::QueryInfo WindowTestBase::buildStreamingWindowQuery(
+    const std::vector<RowVectorPtr>& input,
+    const std::string& function,
+    const std::string& overClause,
+    const std::string& frameClause) {
+  std::string functionSql =
+      fmt::format("{} over ({} {})", function, overClause, frameClause);
+  // split the order by following sql into the orderBy({})
+  core::PlanNodePtr op = nullptr;
+  std::string orderStr = "order by";
+  auto startIdx = overClause.find("order by");
+  if (startIdx != std::string::npos) {
+    // find order by
+    auto endIdx = startIdx + orderStr.length() - 1;
+    auto overClauseLength = overClause.length();
+    auto orderByPars = overClause.substr(endIdx + 1, overClauseLength);
+    std::istringstream tokenStream(orderByPars);
+    std::string token;
+    std::vector<std::string> orderByParsVec;
+    while (std::getline(tokenStream, token, ',')) {
+        orderByParsVec.push_back(token);
+    }
+    op = PlanBuilder()
+                .setParseOptions(options_)
+                .values(input)
+                .orderBy(orderByParsVec, false)
+                .window({functionSql})
+                .planNode();
+  } else {
+    // no order by
+    op = PlanBuilder()
+                .setParseOptions(options_)
+                .values(input)
+                .window({functionSql})
+                .planNode();
+  }
 
   auto rowType = asRowType(input[0]->type());
   std::string columnsString = folly::join(", ", rowType->names());
@@ -120,6 +171,17 @@ void WindowTestBase::testWindowFunction(
       assertQuery(queryInfo.planNode, queryInfo.querySql);
     }
   }
+
+  FLAGS_EnableStreamingWindow = true;
+  for (const auto& overClause : overClauses) {
+    for (auto& frameClause : frameClauses) {
+      auto queryInfo =
+          buildStreamingWindowQuery(input, function, overClause, frameClause);
+      SCOPED_TRACE(queryInfo.functionSql);
+      assertQuery(queryInfo.planNode, queryInfo.querySql);
+    }
+  }
+  FLAGS_EnableStreamingWindow = false;;
 }
 
 void WindowTestBase::testKRangeFrames(const std::string& function) {

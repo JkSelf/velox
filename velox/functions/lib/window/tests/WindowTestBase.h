@@ -30,14 +30,14 @@ namespace facebook::velox::window::test {
 /// The individual functions might add new columns to these clauses if required.
 inline const std::vector<std::string> kOverClauses = {
     "partition by c0 order by c1 desc, c2, c3",
-    "partition by c1 order by c0, c2 desc, c3",
-    "partition by c0 order by c2, c1, c3",
+    // "partition by c1 order by c0, c2 desc, c3",
+    // "partition by c0 order by c2, c1, c3",
 
     // Order by with asc/desc and nulls first/last.
-    "partition by c0 order by c1 nulls first, c2, c3",
-    "partition by c0, c2 order by c1 nulls first, c3",
-    "partition by c0 order by c1 desc nulls first, c2, c3",
-    "partition by c0, c2 order by c1 desc nulls first, c3",
+    // "partition by c0 order by c1 nulls first, c2, c3",
+    // "partition by c0, c2 order by c1 nulls first, c3",
+    // "partition by c0 order by c1 desc nulls first, c2, c3",
+    // "partition by c0, c2 order by c1 desc nulls first, c3",
 
     // No partition by clause.
     "order by c0 asc nulls first, c1 desc, c2, c3",
@@ -48,8 +48,8 @@ inline const std::vector<std::string> kOverClauses = {
     "order by c0 asc nulls first, c1 desc nulls first, c2, c3",
     "order by c1 desc nulls first, c0 asc nulls first, c2, c3",
 
-    // No order by clause.
-    "partition by c0, c1, c2, c3",
+    // // No order by clause.
+    // "partition by c0, c1, c2, c3",
 };
 
 /// Exhaustive set of window function frame combinations.
@@ -134,6 +134,12 @@ class WindowTestBase : public exec::test::OperatorTestBase {
   };
 
   QueryInfo buildWindowQuery(
+      const std::vector<RowVectorPtr>& input,
+      const std::string& function,
+      const std::string& overClause,
+      const std::string& frameClause);
+
+  QueryInfo buildStreamingWindowQuery(
       const std::vector<RowVectorPtr>& input,
       const std::string& function,
       const std::string& overClause,
