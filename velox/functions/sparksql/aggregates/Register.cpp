@@ -20,6 +20,7 @@
 #include "velox/functions/sparksql/aggregates/BitwiseXorAggregate.h"
 #include "velox/functions/sparksql/aggregates/BloomFilterAggAggregate.h"
 #include "velox/functions/sparksql/aggregates/SumAggregate.h"
+#include "velox/functions/sparksql/aggregates/DecimalSumAggregate.h"
 
 namespace facebook::velox::functions::aggregate::sparksql {
 
@@ -35,5 +36,6 @@ void registerAggregateFunctions(
   registerBloomFilterAggAggregate(prefix + "bloom_filter_agg");
   registerAverage(prefix + "avg", withCompanionFunctions);
   registerSum(prefix + "sum");
+  registerDecimalSumAggregate(prefix + "sum");
 }
 } // namespace facebook::velox::functions::aggregate::sparksql
