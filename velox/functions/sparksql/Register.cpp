@@ -75,6 +75,11 @@ void registerExpressionGeneralFunctions(const std::string& prefix) {
       prefix + "make_decimal_by_unscaled_value",
       makeDecimalByUnscaledValueSignatures(),
       makeMakeDecimalByUnscaledValue);
+
+  exec::registerVectorFunction(
+      prefix + "unscaled_value",
+      unscaledValueSignatures(),
+      makeUnscaledValue());
 }
 
 void registerFunctions(const std::string& prefix) {
@@ -232,6 +237,7 @@ void registerFunctions(const std::string& prefix) {
   registerFunction<BloomFilterMightContainFunction, bool, Varbinary, int64_t>(
       {prefix + "might_contain"});
 
+  // Register expression general functions.
   registerExpressionGeneralFunctions(prefix);
 }
 
