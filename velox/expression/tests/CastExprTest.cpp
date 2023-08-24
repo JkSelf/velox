@@ -1373,6 +1373,46 @@ TEST_F(CastExprTest, decimalToBool) {
       "c0", longFlat, makeNullableFlatVector<bool>({1, 0, std::nullopt}));
 }
 
+TEST_F(CastExprTest, decimalToVarchar) {
+  auto shortFlat = makeNullableFlatVector<int64_t>(
+      {DecimalUtil::kShortDecimalMin,
+       -3,
+       0,
+       55,
+       DecimalUtil::kShortDecimalMax,
+       std::nullopt},
+      DECIMAL(18, 18));
+  testComplexCast(
+      "c0",
+      shortFlat,
+      makeNullableFlatVector<StringView>(
+          {"-0.999999999999999999",
+           "-0.000000000000000003",
+           "0",
+           "0.000000000000000055",
+           "0.999999999999999999",
+           std::nullopt}));
+
+  auto longFlat = makeNullableFlatVector<int128_t>(
+      {DecimalUtil::kLongDecimalMin,
+       0,
+       DecimalUtil::kLongDecimalMax,
+       HugeInt::build(0xFFFFFFFFFFFFFFFFull, 0xFFFFFFFFFFFFFFFFull),
+       HugeInt::build(0xffff, 0xffffffffffffffff),
+       std::nullopt},
+      DECIMAL(38, 5));
+  testComplexCast(
+      "c0",
+      longFlat,
+      makeNullableFlatVector<StringView>(
+          {"-999999999999999999999999999999999.99999",
+           "0",
+           "999999999999999999999999999999999.99999",
+           "-0.00001",
+           "12089258196146291747.06175",
+           std::nullopt}));
+}
+
 TEST_F(CastExprTest, decimalToDecimal) {
   // short to short, scale up.
   auto shortFlat =
