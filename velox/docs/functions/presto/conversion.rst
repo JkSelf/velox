@@ -268,6 +268,27 @@ Invalid examples
   SELECT cast('nan' as bigint); -- Invalid argument
   SELECT cast('infinity' as bigint); -- Invalid argument
 
+From decimal
+^^^^^^^^^^^^
+
+Casting from decimal input to an integral type will check cast_to_int_by_truncate configuration.
+If true, it will truncate the decimal part instead of rounding. Otherwise, it will round the input
+value to the closest integral value. If result overflows, or underflows, an exception is thrown.
+
+Valid examples
+
+::
+
+  SELECT cast(2.56 Decimal(6, 2) as integer); -- 2 /* cast_to_int_by_truncate enabled */
+  SELECT cast(2.56 Decimal(6, 2) as integer); -- 3 /* cast_to_int_by_truncate disabled */
+  SELECT cast(3.46 Decimal(6, 2) as integer); -- 3
+
+Invalid examples
+
+::
+  
+  SELECT cast(214748364890 Decimal(12, 2) as integer); -- Out of range
+
 Cast to Boolean
 ---------------
 
