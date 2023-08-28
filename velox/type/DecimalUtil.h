@@ -164,7 +164,7 @@ class DecimalUtil {
     if (rescaledValue < -DecimalUtil::kPowersOfTen[toPrecision] ||
         rescaledValue > DecimalUtil::kPowersOfTen[toPrecision] || isOverflow) {
       VELOX_USER_FAIL(
-          "Cannot cast DECIMAL '{}' to DECIMAL({},{})",
+          "Cannot cast DECIMAL '{}' to DECIMAL({}, {})",
           DecimalUtil::toString(inputValue, DECIMAL(fromPrecision, fromScale)),
           toPrecision,
           toScale);
@@ -184,13 +184,80 @@ class DecimalUtil {
     if (rescaledValue < -DecimalUtil::kPowersOfTen[toPrecision] ||
         rescaledValue > DecimalUtil::kPowersOfTen[toPrecision] || isOverflow) {
       VELOX_USER_FAIL(
-          "Cannot cast {} '{}' to DECIMAL({},{})",
+          "Cannot cast {} '{}' to DECIMAL({}, {})",
           SimpleTypeTrait<TInput>::name,
           inputValue,
           toPrecision,
           toScale);
     }
     return static_cast<TOutput>(rescaledValue);
+  }
+
+  /// Derives from Arrow function DecimalFromString.
+  /// Arrow implementation:
+  /// https://github.com/apache/arrow/blob/main/cpp/src/arrow/util/decimal.cc#L637
+  ///
+  /// Firstly, it will parse the varchar to DecimalComponents which contains the
+  /// message that can represent a value. Secondly, process the exponent to get
+  /// the value parsedScale. Thirdly, compute the rescaled value.
+  /// The caller should test if `error` is empty
+  template <typename T>
+  static std::optional<T> rescaleVarchar(
+      const StringView s,
+      int toPrecision,
+      int toScale,
+      std::string& error) {
+    auto decimalComponentsOpt = parseDecimalComponents(s.data(), s.size());
+    if (!decimalComponentsOpt.has_value()) {
+      error = "Value is not a number.";
+      return std::nullopt;
+    }
+    auto decimalComponents = decimalComponentsOpt.value();
+
+    // Count number of significant digits (without leading zeros).
+    size_t firstNonZero = decimalComponents.wholeDigits.find_first_not_of('0');
+    size_t significantDigits = decimalComponents.fractionalDigits.size();
+    if (firstNonZero != std::string::npos) {
+      significantDigits += decimalComponents.wholeDigits.size() - firstNonZero;
+    }
+    int32_t parsedPrecision = static_cast<int32_t>(significantDigits);
+
+    int32_t parsedScale = 0;
+    if (decimalComponents.exponent.has_value()) {
+      auto adjustedExponent = decimalComponents.exponent.value();
+      parsedScale = -adjustedExponent +
+          static_cast<int32_t>(decimalComponents.fractionalDigits.size());
+    } else {
+      parsedScale =
+          static_cast<int32_t>(decimalComponents.fractionalDigits.size());
+    }
+
+    int128_t out = 0;
+    if (!shiftAndAdd(decimalComponents.wholeDigits, out)) {
+      error = "Value too large.";
+      return std::nullopt;
+    }
+    if (!shiftAndAdd(decimalComponents.fractionalDigits, out)) {
+      error = "Value too large.";
+      return std::nullopt;
+    }
+    out = out * decimalComponents.sign;
+
+    if (parsedScale < 0) {
+      /// Force the scale to zero, to avoid negative scales (due to
+      /// compatibility issues with external systems such as databases).
+      if (-parsedScale > LongDecimalType::kMaxScale) {
+        error = "Value too large.";
+        return std::nullopt;
+      }
+      out = checkedMultiply<int128_t>(
+          out, DecimalUtil::kPowersOfTen[-parsedScale], "HugeInt");
+      parsedPrecision -= parsedScale;
+      parsedScale = 0;
+    }
+
+    return DecimalUtil::rescaleWithRoundUp<int128_t, T>(
+        out, parsedPrecision, parsedScale, toPrecision, toScale);
   }
 
   template <typename R, typename A, typename B>
@@ -320,5 +387,107 @@ class DecimalUtil {
   static int32_t toByteArray(int128_t value, char* out);
 
   static constexpr __uint128_t kOverflowMultiplier = ((__uint128_t)1 << 127);
+
+ private:
+  /// Represent the varchar fragment.
+  ///
+  /// For example:
+  /// | value | wholeDigits | fractionalDigits | exponent | sign
+  /// | 9999999999.99 | 9999999999 | 99 | nullopt | 1
+  /// | 15 | 15 |  | nullopt | 1
+  /// | 1.5 | 1 | 5 | nullopt | 1
+  /// | -1.5 | 1 | 5 | nullopt | -1
+  /// | 31.523e-2 | 31 | 523 | -2 | 1
+  struct DecimalComponents {
+    std::string_view wholeDigits;
+    std::string_view fractionalDigits;
+    std::optional<int32_t> exponent = std::nullopt;
+    int8_t sign = 1;
+  };
+
+  static size_t parseDigitsRun(
+      const char* s,
+      size_t start,
+      size_t size,
+      std::string_view& out) {
+    size_t pos = start;
+    for (; pos < size; ++pos) {
+      if (!std::isdigit(s[pos])) {
+        break;
+      }
+    }
+    out = std::string_view(s + start, pos - start);
+    return pos;
+  }
+
+  static std::optional<DecimalComponents> parseDecimalComponents(
+      const char* s,
+      size_t size) {
+    if (size == 0) {
+      return std::nullopt;
+    }
+    DecimalComponents out;
+    size_t pos = 0;
+    // Sign of the number.
+    if (s[pos] == '-') {
+      out.sign = -1;
+      ++pos;
+    } else if (s[pos] == '+') {
+      out.sign = 1;
+      ++pos;
+    }
+    // First run of digits.
+    pos = parseDigitsRun(s, pos, size, out.wholeDigits);
+    if (pos == size) {
+      return out.wholeDigits.empty() ? std::nullopt
+                                     : std::optional<DecimalComponents>(out);
+    }
+    // Optional dot (if given in fractional form).
+    if (s[pos] == '.') {
+      // Second run of digits.
+      ++pos;
+      pos = parseDigitsRun(s, pos, size, out.fractionalDigits);
+    }
+    if (out.wholeDigits.empty() && out.fractionalDigits.empty()) {
+      // Need at least some digits (whole or fractional).
+      return std::nullopt;
+    }
+    if (pos == size) {
+      return out;
+    }
+    // Optional exponent.
+    if (s[pos] == 'e' || s[pos] == 'E') {
+      ++pos;
+      if (pos != size && s[pos] == '+') {
+        ++pos;
+      }
+      folly::StringPiece p = {s + pos, size - pos};
+      auto tryExp =
+          folly::tryTo<int32_t>(folly::StringPiece(s + pos, size - pos));
+      if (tryExp.hasError()) {
+        return std::nullopt;
+      }
+      out.exponent = tryExp.value();
+      return out;
+    }
+    return pos == size ? std::optional<DecimalComponents>(out) : std::nullopt;
+  }
+
+  /// Multiple out by the appropriate power of 10 necessary to add source parsed
+  /// as int128_t and then adds the parsed value of source.
+  static bool shiftAndAdd(std::string_view input, int128_t& out) {
+    auto length = input.size();
+    if (length == 0) {
+      return true;
+    }
+    out = checkedMultiply<int128_t>(out, DecimalUtil::kPowersOfTen[length]);
+    auto tryValue =
+        folly::tryTo<int128_t>(folly::StringPiece(input.data(), length));
+    if (tryValue.hasError()) {
+      return false;
+    }
+    out = checkedPlus<int128_t>(tryValue.value(), out);
+    return true;
+  }
 }; // DecimalUtil
 } // namespace facebook::velox

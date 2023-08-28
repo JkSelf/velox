@@ -480,6 +480,10 @@ VectorPtr CastExpr::applyDecimal(
         break;
       }
     }
+    case TypeKind::VARCHAR:
+      applyVarcharToDecimalCastKernel<toDecimalType>(
+          rows, input, context, toType, castResult);
+      break;
     default:
       VELOX_UNSUPPORTED(
           "Cast from {} to {} is not supported",

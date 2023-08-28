@@ -236,7 +236,7 @@ class CastExprTest : public functions::test::CastBaseTest {
             makeFlatVector<int64_t>({0, tooSmall}, DECIMAL(10, 0)),
             makeFlatVector<NativeType>(0, 0)),
         fmt::format(
-            "Failed to cast from DECIMAL(10,0) to {}: -2147483649. Out of bounds.",
+            "Cannot cast DECIMAL(10, 0) '-2147483649' to {}. Out of bounds.",
             TypeTraits<KIND>::name));
 
     VELOX_ASSERT_THROW(
@@ -245,7 +245,7 @@ class CastExprTest : public functions::test::CastBaseTest {
             makeFlatVector<int128_t>({0, tooSmall}, DECIMAL(19, 0)),
             makeFlatVector<NativeType>(0, 0)),
         fmt::format(
-            "Failed to cast from DECIMAL(19,0) to {}: -2147483649. Out of bounds.",
+            "Cannot cast DECIMAL(19, 0) '-2147483649' to {}. Out of bounds.",
             TypeTraits<KIND>::name));
 
     VELOX_ASSERT_THROW(
@@ -254,7 +254,7 @@ class CastExprTest : public functions::test::CastBaseTest {
             makeFlatVector<int64_t>({0, tooBig}, DECIMAL(10, 0)),
             makeFlatVector<NativeType>(0, 0)),
         fmt::format(
-            "Failed to cast from DECIMAL(10,0) to {}: 2147483648. Out of bounds.",
+            "Cannot cast DECIMAL(10, 0) '2147483648' to {}. Out of bounds.",
             TypeTraits<KIND>::name));
 
     VELOX_ASSERT_THROW(
@@ -263,7 +263,7 @@ class CastExprTest : public functions::test::CastBaseTest {
             makeFlatVector<int128_t>({0, tooBig}, DECIMAL(19, 0)),
             makeFlatVector<NativeType>(0, 0)),
         fmt::format(
-            "Failed to cast from DECIMAL(19,0) to {}: 2147483648. Out of bounds.",
+            "Cannot cast DECIMAL(19, 0) '2147483648' to {}. Out of bounds.",
             TypeTraits<KIND>::name));
   }
 
@@ -389,7 +389,7 @@ class CastExprTest : public functions::test::CastBaseTest {
             makeFlatVector<T>(std::vector<T>{std::numeric_limits<T>::min()}),
             makeFlatVector(std::vector<int64_t>{0}, DECIMAL(3, 1))),
         fmt::format(
-            "Cannot cast {} '{}' to DECIMAL(3,1)",
+            "Cannot cast {} '{}' to DECIMAL(3, 1)",
             CppToType<T>::name,
             std::to_string(std::numeric_limits<T>::min())));
     VELOX_ASSERT_THROW(
@@ -398,14 +398,14 @@ class CastExprTest : public functions::test::CastBaseTest {
             makeFlatVector<T>(std::vector<T>{-100}),
             makeFlatVector(std::vector<int64_t>{0}, DECIMAL(17, 16))),
         fmt::format(
-            "Cannot cast {} '-100' to DECIMAL(17,16)", CppToType<T>::name));
+            "Cannot cast {} '-100' to DECIMAL(17, 16)", CppToType<T>::name));
     VELOX_ASSERT_THROW(
         testComplexCast(
             "c0",
             makeFlatVector<T>(std::vector<T>{100}),
             makeFlatVector(std::vector<int64_t>{0}, DECIMAL(17, 16))),
         fmt::format(
-            "Cannot cast {} '100' to DECIMAL(17,16)", CppToType<T>::name));
+            "Cannot cast {} '100' to DECIMAL(17, 16)", CppToType<T>::name));
   }
 };
 
@@ -1034,7 +1034,7 @@ TEST_F(CastExprTest, mapCast) {
                 nullEvery(3),
                 nullEvery(7)),
             false),
-        "Failed to cast from BIGINT to TIMESTAMP: 0. Conversion to Timestamp is not supported");
+        "Cannot cast BIGINT '0' to TIMESTAMP. Conversion to Timestamp is not supported");
 
     testComplexCast(
         "c0",
@@ -1447,7 +1447,7 @@ TEST_F(CastExprTest, decimalToDecimal) {
   // Throws exception if CAST fails.
   VELOX_ASSERT_THROW(
       testComplexCast("c0", longFlat, expectedShort),
-      "Cannot cast DECIMAL '-1000.000' to DECIMAL(6,4)");
+      "Cannot cast DECIMAL '-1000.000' to DECIMAL(6, 4)");
 
   // nullOnFailure is true.
   testComplexCast("c0", longFlat, expectedShort, true);
@@ -1480,14 +1480,14 @@ TEST_F(CastExprTest, decimalToDecimal) {
           makeNullableFlatVector<int128_t>(
               {DecimalUtil::kLongDecimalMax}, DECIMAL(38, 0)),
           makeNullableFlatVector<int128_t>({0}, DECIMAL(38, 1))),
-      "Cannot cast DECIMAL '99999999999999999999999999999999999999' to DECIMAL(38,1)");
+      "Cannot cast DECIMAL '99999999999999999999999999999999999999' to DECIMAL(38, 1)");
   VELOX_ASSERT_THROW(
       testComplexCast(
           "c0",
           makeNullableFlatVector<int128_t>(
               {DecimalUtil::kLongDecimalMin}, DECIMAL(38, 0)),
           makeNullableFlatVector<int128_t>({0}, DECIMAL(38, 1))),
-      "Cannot cast DECIMAL '-99999999999999999999999999999999999999' to DECIMAL(38,1)");
+      "Cannot cast DECIMAL '-99999999999999999999999999999999999999' to DECIMAL(38, 1)");
 }
 
 TEST_F(CastExprTest, integerToDecimal) {
@@ -1495,6 +1495,134 @@ TEST_F(CastExprTest, integerToDecimal) {
   testIntToDecimalCasts<int16_t>();
   testIntToDecimalCasts<int32_t>();
   testIntToDecimalCasts<int64_t>();
+}
+
+// The result is obtained by select cast('31.4e-2' as decimal(12, 2)).
+TEST_F(CastExprTest, varcharToDecimal) {
+  auto input = makeFlatVector<StringView>(
+      {"9999999999.99",
+       "15",
+       "1.5",
+       "-1.5",
+       "1.556",
+       "1.554",
+       ("1.556" + std::string(32, '1')).data(),
+       ("1.556" + std::string(32, '9')).data(),
+       "+09",
+       "9.",
+       ".9",
+       "3E2",
+       "-3E+2",
+       "3E+2",
+       "3E-2",
+       "3e+2",
+       "3e-2",
+       "3.5E-2",
+       "3.4E-2",
+       "3.5E+2",
+       "3.4E+2",
+       "31.423e+2",
+       "31.423e-2",
+       "31.523e-2"});
+  testComplexCast(
+      "c0",
+      input,
+      makeFlatVector<int64_t>(
+          {999'999'999'999,
+           1500,
+           150,
+           -150,
+           156,
+           155,
+           156,
+           156,
+           900,
+           900,
+           90,
+           30000,
+           -30000,
+           30000,
+           3,
+           30000,
+           3,
+           4,
+           3,
+           35000,
+           34000,
+           314230,
+           31,
+           32},
+          DECIMAL(12, 2)));
+
+  auto minDecimalStr = '-' + std::string(36, '9') + '.' + "99";
+  auto maxDecimalStr = std::string(36, '9') + '.' + "99";
+  testComplexCast(
+      "c0",
+      makeFlatVector<StringView>(
+          {StringView(minDecimalStr),
+           StringView(maxDecimalStr),
+           "123456789012345678901234.567"}),
+      makeFlatVector<int128_t>(
+          {
+              DecimalUtil::kLongDecimalMin,
+              DecimalUtil::kLongDecimalMax,
+              HugeInt::build(
+                  669260, 10962463713375599297U), // 12345678901234567890123457
+          },
+          DECIMAL(38, 2)));
+
+  testComplexCast(
+      "c0",
+      makeFlatVector<StringView>(
+          {StringView(('-' + std::string(38, '9')).data()),
+           StringView(std::string(38, '9').data())}),
+      makeFlatVector<int128_t>(
+          {DecimalUtil::kLongDecimalMin, DecimalUtil::kLongDecimalMax},
+          DECIMAL(38, 0)));
+
+  VELOX_ASSERT_THROW(
+      testComplexCast(
+          "c0",
+          makeConstant<StringView>(std::string(280, '9').data(), 1),
+          makeConstant<int128_t>(1, 1, DECIMAL(38, 0))),
+      fmt::format(
+          "Cannot cast VARCHAR '{}' to DECIMAL(38, 0). Value too large.",
+          std::string(280, '9')))
+
+  VELOX_ASSERT_THROW(
+      testComplexCast(
+          "c0",
+          makeConstant<StringView>("0.0444a", 1),
+          makeConstant<int128_t>(1, 1, DECIMAL(38, 0))),
+      "Cannot cast VARCHAR '0.0444a' to DECIMAL(38, 0). Value is not a number")
+
+  VELOX_ASSERT_THROW(
+      testComplexCast(
+          "c0",
+          makeConstant<StringView>("", 1),
+          makeConstant<int128_t>(1, 1, DECIMAL(38, 0))),
+      "Cannot cast VARCHAR '' to DECIMAL(38, 0). Value is not a number")
+
+  VELOX_ASSERT_THROW(
+      testComplexCast(
+          "c0",
+          makeConstant<StringView>("1.23e67", 1),
+          makeConstant<int128_t>(1, 1, DECIMAL(38, 0))),
+      "Cannot cast VARCHAR '1.23e67' to DECIMAL(38, 0). Value too large.")
+
+  VELOX_ASSERT_THROW(
+      testComplexCast(
+          "c0",
+          makeConstant<StringView>("20908.23e35", 1),
+          makeConstant<int128_t>(1, 1, DECIMAL(38, 0))),
+      "HugeInt overflow: 2090823 * 1000000000000000000000000000000000")
+
+  VELOX_ASSERT_THROW(
+      testComplexCast(
+          "c0",
+          makeConstant<StringView>("23e-5d", 1),
+          makeConstant<int128_t>(1, 1, DECIMAL(38, 0))),
+      "Cannot cast VARCHAR '23e-5d' to DECIMAL(38, 0). Value is not a number")
 }
 
 TEST_F(CastExprTest, castInTry) {

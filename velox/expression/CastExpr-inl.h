@@ -30,10 +30,10 @@ inline std::string makeErrorMessage(
     const TypePtr& toType,
     const std::string& details = "") {
   return fmt::format(
-      "Failed to cast from {} to {}: {}. {}",
+      "Cannot cast {} '{}' to {}. {}",
       input.type()->toString(),
-      toType->toString(),
       input.toString(row),
+      toType->toString(),
       details);
 }
 
@@ -46,7 +46,7 @@ inline std::exception_ptr makeBadCastException(
       std::current_exception(),
       makeErrorMessage(input, row, resultType, errorDetails),
       false));
-};
+}
 
 } // namespace
 
@@ -207,6 +207,42 @@ void CastExpr::applyIntToDecimalCastKernel(
           castResult->setNull(row, true);
         }
       });
+}
+
+template <typename T>
+void CastExpr::applyVarcharToDecimalCastKernel(
+    const SelectivityVector& rows,
+    const BaseVector& input,
+    exec::EvalCtx& context,
+    const TypePtr& toType,
+    VectorPtr& result) {
+  auto sourceVector = input.as<SimpleVector<StringView>>();
+  auto rawBuffer = result->asUnchecked<FlatVector<T>>()->mutableRawValues();
+  const auto toPrecisionScale = getDecimalPrecisionScale(*toType);
+  auto setError = [&](vector_size_t row, const std::string& details) {
+    if (setNullInResultAtError()) {
+      result->setNull(row, true);
+    } else {
+      context.setVeloxExceptionError(
+          row, makeBadCastException(toType, input, row, details));
+    }
+  };
+
+  applyToSelectedNoThrowLocal(context, rows, result, [&](int row) {
+    std::string error;
+    auto rescaledValue = DecimalUtil::rescaleVarchar<T>(
+        sourceVector->valueAt(row),
+        toPrecisionScale.first,
+        toPrecisionScale.second,
+        error);
+    if (!error.empty()) {
+      setError(row, error);
+    } else if (rescaledValue.has_value()) {
+      rawBuffer[row] = rescaledValue.value();
+    } else {
+      result->setNull(row, true);
+    }
+  });
 }
 
 template <typename FromNativeType, TypeKind ToKind>
