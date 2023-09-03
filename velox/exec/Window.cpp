@@ -16,6 +16,7 @@
 #include "velox/exec/Window.h"
 #include "velox/exec/OperatorUtils.h"
 #include "velox/exec/SortWindowBuild.h"
+
 #include "velox/exec/Task.h"
 
 namespace facebook::velox::exec {
@@ -37,7 +38,11 @@ Window::Window(
   auto inputType = windowNode->sources()[0]->outputType();
   createWindowFunctions(windowNode, inputType, driverCtx->queryConfig());
 
-  createPeerAndFrameBuffers();
+   if (windowNode->isStreamingWindow()) {
+    windowBuild_ = std::make_unique<StreamingWindowBuild>(windowNode, pool());
+  } else {
+    windowBuild_ = std::make_unique<SortWindowBuild>(windowNode, pool());
+  }
 }
 
 Window::WindowFrame Window::createWindowFrame(
@@ -134,24 +139,41 @@ void Window::createPeerAndFrameBuffers() {
   // the input columns size. We need to also account for the output columns.
   numRowsPerOutput_ = outputBatchRows(windowBuild_->estimateRowSize());
 
-  peerStartBuffer_ = AlignedBuffer::allocate<vector_size_t>(
-      numRowsPerOutput_, operatorCtx_->pool());
-  peerEndBuffer_ = AlignedBuffer::allocate<vector_size_t>(
-      numRowsPerOutput_, operatorCtx_->pool());
-
   auto numFuncs = windowFunctions_.size();
-  frameStartBuffers_.reserve(numFuncs);
-  frameEndBuffers_.reserve(numFuncs);
-  validFrames_.reserve(numFuncs);
+  // The buffer will be allocated for the first time.
+  if (!peerStartBuffer_) {
+    if (numRows_ > numRowsPerOutput_) {
+      numRowsPerOutput_ = numRows_;
+    }
+    peerStartBuffer_ = AlignedBuffer::allocate<vector_size_t>(
+        numRowsPerOutput_, operatorCtx_->pool());
+    peerEndBuffer_ = AlignedBuffer::allocate<vector_size_t>(
+        numRowsPerOutput_, operatorCtx_->pool());
 
-  for (auto i = 0; i < numFuncs; i++) {
-    BufferPtr frameStartBuffer = AlignedBuffer::allocate<vector_size_t>(
-        numRowsPerOutput_, operatorCtx_->pool());
-    BufferPtr frameEndBuffer = AlignedBuffer::allocate<vector_size_t>(
-        numRowsPerOutput_, operatorCtx_->pool());
-    frameStartBuffers_.push_back(frameStartBuffer);
-    frameEndBuffers_.push_back(frameEndBuffer);
-    validFrames_.push_back(SelectivityVector(numRowsPerOutput_));
+    frameStartBuffers_.reserve(numFuncs);
+    frameEndBuffers_.reserve(numFuncs);
+    validFrames_.reserve(numFuncs);
+
+    for (auto i = 0; i < numFuncs; i++) {
+      BufferPtr frameStartBuffer = AlignedBuffer::allocate<vector_size_t>(
+          numRowsPerOutput_, operatorCtx_->pool());
+      BufferPtr frameEndBuffer = AlignedBuffer::allocate<vector_size_t>(
+          numRowsPerOutput_, operatorCtx_->pool());
+      frameStartBuffers_.push_back(frameStartBuffer);
+      frameEndBuffers_.push_back(frameEndBuffer);
+      validFrames_.push_back(SelectivityVector(numRowsPerOutput_));
+    }
+  } else if (numRows_ > numRowsPerOutput_) {
+    // The buffer will only be reallocated when the size exceeds the capacity.
+    AlignedBuffer::reallocate<vector_size_t>(&peerStartBuffer_, numRows_);
+    AlignedBuffer::reallocate<vector_size_t>(&peerEndBuffer_, numRows_);
+
+    for (auto i = 0; i < numFuncs; i++) {
+      AlignedBuffer::reallocate<vector_size_t>(
+          &frameStartBuffers_[i], numRows_);
+      AlignedBuffer::reallocate<vector_size_t>(&frameEndBuffers_[i], numRows_);
+      validFrames_.push_back(SelectivityVector(numRows_));
+    }
   }
 }
 
@@ -171,8 +193,10 @@ void Window::callResetPartition() {
   currentPartition_ = nullptr;
   if (windowBuild_->hasNextPartition()) {
     currentPartition_ = windowBuild_->nextPartition();
-    for (int i = 0; i < windowFunctions_.size(); i++) {
-      windowFunctions_[i]->resetPartition(currentPartition_.get());
+    if (currentPartition_) {
+      for (int i = 0; i < windowFunctions_.size(); i++) {
+        windowFunctions_[i]->resetPartition(currentPartition_.get());
+      }
     }
   }
 }
@@ -214,7 +238,6 @@ void Window::updateKRowsFrameBounds(
     vector_size_t startRow,
     vector_size_t numRows,
     vector_size_t* rawFrameBounds) {
-
   if (frameArg.index == kConstantChannel) {
     auto constantOffset = frameArg.constant.value();
     auto startValue =
@@ -225,18 +248,10 @@ void Window::updateKRowsFrameBounds(
         frameArg.index, partitionOffset_, numRows, 0, frameArg.value);
     if (frameArg.value->typeKind() == TypeKind::INTEGER) {
       updateKRowsOffsetsColumn<int32_t>(
-          isKPreceding,
-          frameArg.value,
-          startRow,
-          numRows,
-          rawFrameBounds);
+          isKPreceding, frameArg.value, startRow, numRows, rawFrameBounds);
     } else {
       updateKRowsOffsetsColumn<int64_t>(
-          isKPreceding,
-          frameArg.value,
-          startRow,
-          numRows,
-          rawFrameBounds);
+          isKPreceding, frameArg.value, startRow, numRows, rawFrameBounds);
     }
   }
 }
@@ -480,25 +495,53 @@ void Window::callApplyLoop(
   }
 }
 
+RowVectorPtr Window::createFinalOutput() {
+  if (output_->size() > numRowsPerOutput_) {
+    auto result = std::dynamic_pointer_cast<RowVector>(
+        output_->slice(0, numRowsPerOutput_));
+    auto remainingSize = output_->size() - numRowsPerOutput_;
+    output_ = std::dynamic_pointer_cast<RowVector>(
+        output_->slice(numRowsPerOutput_, remainingSize));
+    return result;
+  } else if (noMoreInput_) {
+    auto result = std::move(output_);
+    return result;
+  } else {
+    return nullptr;
+  }
+}
+
 RowVectorPtr Window::getOutput() {
   if (numRows_ == 0) {
     return nullptr;
   }
 
-  auto numRowsLeft = numRows_ - numProcessedRows_;
+  // StreamingWindow need.
+  if (noMoreInput_ && output_ != nullptr) {
+    return createFinalOutput();
+  }
+
+  callResetPartition();
+
+  if (!currentPartition_) {
+    // WindowBuild doesn't have a partition to output.
+    return nullptr;
+  }
+
+  createPeerAndFrameBuffers();
+
+  auto numRowsLeft = 0;
+  if (dynamic_cast<StreamingWindowBuild*>(windowBuild_.get())) {
+    numRowsLeft = windowBuild_->getPartitionedRowSize();
+  } else {
+    numRowsLeft = numRows_ - numProcessedRows_;
+  }
+
   if (numRowsLeft == 0) {
     return nullptr;
   }
 
-  if (!currentPartition_) {
-    callResetPartition();
-    if (!currentPartition_) {
-      // WindowBuild doesn't have a partition to output.
-      return nullptr;
-    }
-  }
-
-  auto numOutputRows = std::min(numRowsPerOutput_, numRowsLeft);
+  auto numOutputRows = numRowsLeft;
   auto result = std::dynamic_pointer_cast<RowVector>(
       BaseVector::create(outputType_, numOutputRows, operatorCtx_->pool()));
 
@@ -510,7 +553,18 @@ RowVectorPtr Window::getOutput() {
 
   // Compute the output values of window functions.
   callApplyLoop(numOutputRows, result);
-  return result;
+
+  if (dynamic_cast<StreamingWindowBuild*>(windowBuild_.get())) {
+    windowBuild_->clearBuffer();
+    if (output_ == nullptr) {
+      output_ = result;
+    } else {
+      output_->append(result.get());
+    }
+    return createFinalOutput();
+  } else {
+    return result;
+  }
 }
 
 } // namespace facebook::velox::exec

@@ -721,7 +721,9 @@ class PlanBuilder {
   /// "row_number() over (order by b) as a"
   /// "row_number() over (partition by a order by b
   ///  rows between a + 10 preceding and 10 following)"
-  PlanBuilder& window(const std::vector<std::string>& windowFunctions);
+  PlanBuilder& window(
+      const std::vector<std::string>& windowFunctions,
+      bool isStreamingWindow = false);
 
   /// Add a RowNumberNode to compute single row_number window function with an
   /// optional limit and no sorting.

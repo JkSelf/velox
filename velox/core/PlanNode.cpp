@@ -1167,12 +1167,14 @@ WindowNode::WindowNode(
     std::vector<SortOrder> sortingOrders,
     std::vector<std::string> windowColumnNames,
     std::vector<Function> windowFunctions,
+    bool isStreamingWindow,
     PlanNodePtr source)
     : PlanNode(std::move(id)),
       partitionKeys_(std::move(partitionKeys)),
       sortingKeys_(std::move(sortingKeys)),
       sortingOrders_(std::move(sortingOrders)),
       windowFunctions_(std::move(windowFunctions)),
+      isStreamingWindow_(isStreamingWindow),
       sources_{std::move(source)},
       outputType_(getWindowOutputType(
           sources_[0]->outputType(),
@@ -1350,6 +1352,7 @@ PlanNodePtr WindowNode::create(const folly::dynamic& obj, void* context) {
       sortingOrders,
       windowNames,
       functions,
+      false, /*isStreamingWindow*/
       source);
 }
 

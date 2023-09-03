@@ -132,6 +132,14 @@ class WindowTestBase : public exec::test::OperatorTestBase {
       const std::string& overClause,
       const std::string& frameClause);
 
+  // This function is used to test the StreamingWindow. It will add the order by
+  // action to ensure the data is ordered.
+  QueryInfo buildStreamingWindowQuery(
+      const std::vector<RowVectorPtr>& input,
+      const std::string& function,
+      const std::string& overClause,
+      const std::string& frameClause);
+
   /// This function tests SQL queries for the window function and
   /// the specified overClauses and frameClauses with the input RowVectors.
   /// Note : 'function' should be a full window function invocation string
@@ -140,6 +148,20 @@ class WindowTestBase : public exec::test::OperatorTestBase {
   /// clause that corresponds to the default frame of RANGE UNBOUNDED PRECEDING
   /// AND CURRENT ROW.
   void testWindowFunction(
+      const std::vector<RowVectorPtr>& input,
+      const std::string& function,
+      const std::vector<std::string>& overClauses,
+      const std::vector<std::string>& frameClauses = {""},
+      bool createTable = true);
+
+  /// This function tests SQL queries for the window function and
+  /// the specified overClauses and frameClauses with the input RowVectors.
+  /// Note : 'function' should be a full window function invocation string
+  /// including input parameters and open/close braces. e.g. rank(), ntile(5).
+  /// If the frameClauses is not specified, then the default is a single empty
+  /// clause that corresponds to the default frame of RANGE UNBOUNDED PRECEDING
+  /// AND CURRENT ROW.
+  void testStreamingWindowFunction(
       const std::vector<RowVectorPtr>& input,
       const std::string& function,
       const std::vector<std::string>& overClauses,

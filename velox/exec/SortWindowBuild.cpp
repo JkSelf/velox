@@ -15,6 +15,7 @@
  */
 
 #include "velox/exec/SortWindowBuild.h"
+#include <iostream>
 
 namespace facebook::velox::exec {
 
@@ -31,6 +32,8 @@ SortWindowBuild::SortWindowBuild(
 }
 
 void SortWindowBuild::addInput(RowVectorPtr input) {
+  std::cout << "the SortWindowBuild::addInput is running"
+            << "\n";
   for (auto col = 0; col < input->childrenSize(); ++col) {
     decodedInputVectors_[col].decode(*input->childAt(col));
   }

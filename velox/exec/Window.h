@@ -17,6 +17,7 @@
 
 #include "velox/exec/Operator.h"
 #include "velox/exec/RowContainer.h"
+#include "velox/exec/StreamingWindowBuild.h"
 #include "velox/exec/WindowBuild.h"
 #include "velox/exec/WindowFunction.h"
 #include "velox/exec/WindowPartition.h"
@@ -57,7 +58,14 @@ class Window : public Operator {
   }
 
   bool isFinished() override {
-    return noMoreInput_ && numRows_ == numProcessedRows_;
+    if (dynamic_cast<StreamingWindowBuild*>(windowBuild_.get())) {
+      return noMoreInput_ && windowBuild_->getRemainRowSize() == 0 &&
+          output_ == nullptr;
+
+    } else {
+      return noMoreInput_ && numRows_ == numProcessedRows_ &&
+          output_ == nullptr;
+    }
   }
 
  private:
@@ -80,6 +88,9 @@ class Window : public Operator {
     // Set only when endType is BoundType::kPreceding or kFollowing.
     const std::optional<FrameChannelArg> end;
   };
+
+  // Split the output vector based on the outputBatchSize_.
+  RowVectorPtr createFinalOutput();
 
   // Creates WindowFunction and frame objects for this operator.
   void createWindowFunctions(
@@ -216,6 +227,10 @@ class Window : public Operator {
   // computePeerBuffers they are saved here.
   vector_size_t peerStartRow_ = 0;
   vector_size_t peerEndRow_ = 0;
+
+  // This output vetor will apend all the output and then be splitted based on
+  // the outputBatchSize_.
+  RowVectorPtr output_ = nullptr;
 };
 
 } // namespace facebook::velox::exec

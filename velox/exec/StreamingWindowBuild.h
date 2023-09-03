@@ -23,24 +23,24 @@ namespace facebook::velox::exec {
 // Sorts input data of the Window by {partition keys, sort keys}
 // to identify window partitions. This sort fully orders
 // rows as needed for window function computation.
-class SortWindowBuild : public WindowBuild {
+class StreamingWindowBuild : public WindowBuild {
  public:
-  SortWindowBuild(
+  StreamingWindowBuild(
       const std::shared_ptr<const core::WindowNode>& windowNode,
       velox::memory::MemoryPool* pool);
-
-  bool needsInput() override {
-    // No partitions are available yet, so can consume input rows.
-    return partitionStartRows_.size() == 0;
-  }
 
   void addInput(RowVectorPtr input) override;
 
   void noMoreInput() override;
 
+  std::unique_ptr<WindowPartition> nextPartition() override;
+
   bool hasNextPartition() override;
 
-  std::unique_ptr<WindowPartition> nextPartition() override;
+  bool needsInput() override {
+    // No partitions are available yet, so can consume input rows.
+    return true;
+  }
 
   vector_size_t getPartitionedRowSize() override {
     return sortedRows_.size();
@@ -50,18 +50,18 @@ class SortWindowBuild : public WindowBuild {
     return data_->numRows();
   }
 
-  void clearBuffer() override {}
+  void clearBuffer() override {
+    currentPartition_ = -1;
+    data_->eraseRows(
+        folly::Range<char**>(sortedRows_.data(), sortedRows_.size()));
+    sortedRows_.clear();
+    partitionStartRows_.clear();
+  }
 
  private:
-  // Main sorting function loop done after all input rows are received
-  // by WindowBuild.
-  void sortPartitions();
-
-  // Function to compute the partitionStartRows_ structure.
-  // partitionStartRows_ is vector of the starting rows index
-  // of each partition in the data. This is an auxiliary
-  // structure that helps simplify the window function computations.
-  void computePartitionStartRows();
+  // Update the partitionRows_ and partitionStartRows_ value after new partition
+  // is created.
+  void updatePartitions();
 
   // allKeyInfo_ is a combination of (partitionKeyInfo_ and sortKeyInfo_).
   // It is used to perform a full sorting of the input rows to be able to
@@ -75,14 +75,24 @@ class SortWindowBuild : public WindowBuild {
   // order by) for the processing.
   std::vector<char*> sortedRows_;
 
+  // This variable is a temporary variable used to store the rows within the
+  // same partition, and it will be cleared when creating a new partition.
+  std::vector<char*> partitionRows_;
+
   // This is a vector that gives the index of the start row
   // (in sortedRows_) of each partition in the RowContainer data_.
   // This auxiliary structure helps demarcate partitions.
   std::vector<vector_size_t> partitionStartRows_;
 
+  // This variable is a temporary variable used to compare rows based on
+  // partitionKeys.
+  char* previousRow_ = nullptr;
+
   // Current partition being output. Used to construct WindowPartitions
   // during resetPartition.
   vector_size_t currentPartition_ = -1;
+
+  bool noMoreInput_ = false;
 };
 
 } // namespace facebook::velox::exec

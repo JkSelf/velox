@@ -1399,7 +1399,8 @@ bool equalSortOrderList(
 } // namespace
 
 PlanBuilder& PlanBuilder::window(
-    const std::vector<std::string>& windowFunctions) {
+    const std::vector<std::string>& windowFunctions,
+    bool isStreamingWindow) {
   VELOX_CHECK_GT(
       windowFunctions.size(),
       0,
@@ -1480,6 +1481,7 @@ PlanBuilder& PlanBuilder::window(
       sortingOrders,
       windowNames,
       windowNodeFunctions,
+      isStreamingWindow,
       planNode_);
   return *this;
 }

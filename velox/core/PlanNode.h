@@ -2084,6 +2084,7 @@ class WindowNode : public PlanNode {
       std::vector<SortOrder> sortingOrders,
       std::vector<std::string> windowColumnNames,
       std::vector<Function> windowFunctions,
+      bool isStreamingWindow,
       PlanNodePtr source);
 
   const std::vector<PlanNodePtr>& sources() const override {
@@ -2112,6 +2113,10 @@ class WindowNode : public PlanNode {
     return windowFunctions_;
   }
 
+  bool isStreamingWindow() const {
+    return isStreamingWindow_;
+  }
+
   std::string_view name() const override {
     return "Window";
   }
@@ -2129,6 +2134,8 @@ class WindowNode : public PlanNode {
   const std::vector<SortOrder> sortingOrders_;
 
   const std::vector<Function> windowFunctions_;
+
+  const bool isStreamingWindow_;
 
   const std::vector<PlanNodePtr> sources_;
 

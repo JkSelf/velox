@@ -67,6 +67,13 @@ class WindowBuild {
   std::optional<int64_t> estimateRowSize() {
     return data_->estimateRowSize();
   }
+  // Get pre n-1 partition num rows
+  virtual vector_size_t getPartitionedRowSize() = 0;
+
+  // Get pre n-1 partition num rows
+  virtual vector_size_t getRemainRowSize() = 0;
+
+  virtual void clearBuffer() = 0;
 
  protected:
   bool compareRowsWithKeys(
