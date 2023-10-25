@@ -126,6 +126,10 @@ struct UnknownValue {
   bool operator>=(const UnknownValue& /* b */) const {
     return true;
   }
+
+  operator std::string() const {
+    return "NULL";
+  }
 };
 
 template <typename T>
