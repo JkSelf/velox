@@ -18,6 +18,10 @@ Mathematical Functions
 
     Returns inverse hyperbolic sine of ``x``.
 
+.. spark:function:: atan2(x, y) -> double
+
+    Returns the angle in radians between the positive x-axis of a plane and the point given by the coordinates(x, y).
+
 .. spark:function:: atanh(x) -> double
 
     Returns inverse hyperbolic tangent of ``x``.
@@ -47,6 +51,18 @@ Mathematical Functions
 .. spark:function:: csc(x) -> double
 
     Returns the cosecant of ``x``.
+
+.. spark:function:: decimal_round(decimal, scale) -> [decimal]
+
+    The decimal places ``d`` of result depends on precision and scale of ``decimal`` and ``scale`` value.
+    Returns ``decimal`` rounded to ``d`` decimal places using HALF_UP rounding mode. 
+    In HALF_UP rounding, the digit 5 is rounded up.
+
+    Implementation matches Spark 3.3.
+
+.. spark:function:: decimal_round(decimal) -> [decimal]
+
+    A version of ``decimal_round`` that uses 0 as ``scale``.
 
 .. spark:function:: divide(x, y) -> double
 
@@ -164,6 +180,7 @@ Mathematical Functions
 
     Returns ``x`` rounded to ``d`` decimal places using HALF_UP rounding mode. 
     In HALF_UP rounding, the digit 5 is rounded up.
+    Use ``decimal_round`` for DECIMAL type.
 
 .. spark:function:: sec(x) -> double
 

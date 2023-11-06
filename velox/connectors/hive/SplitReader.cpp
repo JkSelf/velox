@@ -220,9 +220,18 @@ std::vector<TypePtr> SplitReader::adaptColumns(
     } else {
       auto fileTypeIdx = fileType->getChildIdxIfExists(fieldName);
       if (!fileTypeIdx.has_value()) {
-        // Column is missing. Most likely due to schema evolution.
-        VELOX_CHECK(tableSchema);
-        setNullConstantValue(childSpec, tableSchema->findChild(fieldName));
+        // If field name exists in the user-specified output type,
+        // set the column as null constant.
+        // Related PR: https://github.com/facebookincubator/velox/pull/6427.
+        auto outputTypeIdx = readerOutputType_->getChildIdxIfExists(fieldName);
+        if (outputTypeIdx.has_value()) {
+          setNullConstantValue(
+              childSpec, readerOutputType_->childAt(outputTypeIdx.value()));
+        } else {
+          // Column is missing. Most likely due to schema evolution.
+          VELOX_CHECK(tableSchema);
+          setNullConstantValue(childSpec, tableSchema->findChild(fieldName));
+        }
       } else {
         // Column no longer missing, reset constant value set on the spec.
         childSpec->setConstantValue(nullptr);
@@ -305,8 +314,19 @@ void SplitReader::setPartitionValue(
       it != partitionKeys_.end(),
       "ColumnHandle is missing for partition key {}",
       partitionKey);
-  auto constValue = VELOX_DYNAMIC_SCALAR_TYPE_DISPATCH(
-      convertFromString, it->second->dataType()->kind(), value);
+  velox::variant constValue;
+  if (it->second->dataType()->isDate()) {
+    // TODO: need to align with query config for isIso8601.
+    if (value.has_value()) {
+      constValue = velox::variant(
+          velox::util::castFromDateString(StringView(value.value()), false));
+    } else {
+      constValue = velox::variant(TypeKind::INTEGER);
+    }
+  } else {
+    constValue = VELOX_DYNAMIC_SCALAR_TYPE_DISPATCH(
+        convertFromString, it->second->dataType()->kind(), value);
+  }
   setConstantValue(spec, it->second->dataType(), constValue);
 }
 

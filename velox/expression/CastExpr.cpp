@@ -467,6 +467,14 @@ VectorPtr CastExpr::applyDecimal(
       applyIntToDecimalCastKernel<int32_t, toDecimalType>(
           rows, input, context, toType, castResult);
       break;
+    case TypeKind::REAL:
+      applyDoubleToDecimal<float, toDecimalType>(
+          rows, input, context, toType, castResult);
+      break;
+    case TypeKind::DOUBLE:
+      applyDoubleToDecimal<double, toDecimalType>(
+          rows, input, context, toType, castResult);
+      break;
     case TypeKind::BIGINT: {
       if (fromType->isShortDecimal()) {
         applyDecimalCastKernel<int64_t, toDecimalType>(
@@ -485,6 +493,10 @@ VectorPtr CastExpr::applyDecimal(
       }
       [[fallthrough]];
     }
+    case TypeKind::VARCHAR:
+      applyVarcharToDecimalCastKernel<toDecimalType>(
+          rows, input, context, toType, castResult);
+      break;
     default:
       VELOX_UNSUPPORTED(
           "Cast from {} to {} is not supported",

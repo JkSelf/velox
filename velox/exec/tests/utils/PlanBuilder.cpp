@@ -110,7 +110,8 @@ PlanBuilder& PlanBuilder::tableScan(
     const std::unordered_map<std::string, std::string>& columnAliases,
     const std::vector<std::string>& subfieldFilters,
     const std::string& remainingFilter,
-    const RowTypePtr& dataColumns) {
+    const RowTypePtr& dataColumns,
+    bool isFilterPushdownEnabled) {
   std::unordered_map<std::string, std::shared_ptr<connector::ColumnHandle>>
       assignments;
   std::unordered_map<std::string, core::TypedExprPtr> typedMapping;
@@ -170,7 +171,7 @@ PlanBuilder& PlanBuilder::tableScan(
   auto tableHandle = std::make_shared<HiveTableHandle>(
       kHiveConnectorId,
       tableName,
-      true,
+      isFilterPushdownEnabled,
       std::move(filters),
       remainingFilterExpr,
       dataColumns);
@@ -901,6 +902,61 @@ core::PlanNodePtr createLocalMergeNode(
 
 PlanBuilder& PlanBuilder::localMerge(const std::vector<std::string>& keys) {
   planNode_ = createLocalMergeNode(nextPlanNodeId(), keys, {planNode_}, pool_);
+  return *this;
+}
+
+PlanBuilder& PlanBuilder::expand(
+    const std::vector<std::vector<std::string>>& projections) {
+  std::vector<std::vector<core::TypedExprPtr>> projectExprs;
+  projectExprs.reserve(projections.size());
+  auto numColumns = projections[0].size();
+  std::vector<std::string> names;
+  names.reserve(numColumns);
+  std::vector<std::shared_ptr<const Type>> types;
+  types.reserve(numColumns);
+  std::string groupIdPrefix = "group_id_";
+  int grouIdColCount = 0;
+  const auto inputRowType = planNode_->outputType();
+  // Get the type and name for each column based on the projections. And only
+  // need to handle the non-null entry in each projection. The null column can
+  // be handled in remaning projections.
+  for (int i = 0; i < numColumns; ++i) {
+    for (int j = 0; j < projections.size(); ++j) {
+      if (projections[j][i] != "") {
+        if (inputRowType->containsChild(projections[j][i])) {
+          names.push_back(projections[j][i]);
+          types.push_back(field(inputRowType, projections[j][i])->type());
+        } else {
+          names.push_back(fmt::format("{}{}", groupIdPrefix, grouIdColCount++));
+          types.push_back(BIGINT());
+        }
+        break;
+      }
+    }
+  }
+
+  // Create constant, null or non-null projection.
+  for (const auto& projection : projections) {
+    std::vector<core::TypedExprPtr> projectExpr;
+    projectExpr.reserve(projection.size());
+    for (int i = 0; i < projection.size(); ++i) {
+      if (projection[i] == "") {
+        projectExpr.push_back(std::make_shared<core::ConstantTypedExpr>(
+            types[i], variant::null(types[i]->kind())));
+      } else if (inputRowType->containsChild(projection[i])) {
+        projectExpr.push_back(field(inputRowType, projection[i]));
+      } else {
+        int64_t value = std::stol(projection[i]);
+        projectExpr.push_back(std::make_shared<core::ConstantTypedExpr>(
+            BIGINT(), variant(value)));
+      }
+    }
+    projectExprs.push_back(projectExpr);
+  }
+
+  planNode_ = std::make_shared<core::ExpandNode>(
+      nextPlanNodeId(), projectExprs, std::move(names), planNode_);
+
   return *this;
 }
 

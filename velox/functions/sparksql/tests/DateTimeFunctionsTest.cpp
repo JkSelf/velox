@@ -291,7 +291,7 @@ TEST_F(DateTimeFunctionsTest, dateSub) {
 
 TEST_F(DateTimeFunctionsTest, dayOfYear) {
   const auto day = [&](std::optional<int32_t> date) {
-    return evaluateOnce<int64_t, int32_t>("dayofyear(c0)", {date}, {DATE()});
+    return evaluateOnce<int32_t, int32_t>("dayofyear(c0)", {date}, {DATE()});
   };
   EXPECT_EQ(std::nullopt, day(std::nullopt));
   EXPECT_EQ(100, day(parseDate("2016-04-09")));
@@ -299,13 +299,59 @@ TEST_F(DateTimeFunctionsTest, dayOfYear) {
   EXPECT_EQ(1, day(parseDate("1970-01-01")));
 }
 
+TEST_F(DateTimeFunctionsTest, dayOfYearTimestamp) {
+  const auto day = [&](std::optional<Timestamp> date) {
+    return evaluateOnce<int32_t>("dayofyear(c0)", date);
+  };
+  EXPECT_EQ(std::nullopt, day(std::nullopt));
+  EXPECT_EQ(1, day(Timestamp(0, 0)));
+  EXPECT_EQ(365, day(Timestamp(-1, 9000)));
+  EXPECT_EQ(273, day(Timestamp(1632989700, 0)));
+  EXPECT_EQ(274, day(Timestamp(1633076100, 0)));
+  EXPECT_EQ(279, day(Timestamp(1633508100, 0)));
+  EXPECT_EQ(304, day(Timestamp(1635668100, 0)));
+
+  setQueryTimeZone("Pacific/Apia");
+
+  EXPECT_EQ(std::nullopt, day(std::nullopt));
+  EXPECT_EQ(365, day(Timestamp(0, 0)));
+  EXPECT_EQ(365, day(Timestamp(-1, 9000)));
+  EXPECT_EQ(273, day(Timestamp(1632989700, 0)));
+  EXPECT_EQ(274, day(Timestamp(1633076100, 0)));
+  EXPECT_EQ(279, day(Timestamp(1633508100, 0)));
+  EXPECT_EQ(304, day(Timestamp(1635668100, 0)));
+}
+
 TEST_F(DateTimeFunctionsTest, dayOfMonth) {
   const auto day = [&](std::optional<int32_t> date) {
-    return evaluateOnce<int64_t, int32_t>("dayofmonth(c0)", {date}, {DATE()});
+    return evaluateOnce<int32_t, int32_t>("dayofmonth(c0)", {date}, {DATE()});
   };
   EXPECT_EQ(std::nullopt, day(std::nullopt));
   EXPECT_EQ(30, day(parseDate("2009-07-30")));
   EXPECT_EQ(23, day(parseDate("2023-08-23")));
+}
+
+TEST_F(DateTimeFunctionsTest, dayOfMonthTimestamp) {
+  const auto day = [&](std::optional<Timestamp> date) {
+    return evaluateOnce<int32_t>("dayofmonth(c0)", date);
+  };
+  EXPECT_EQ(std::nullopt, day(std::nullopt));
+  EXPECT_EQ(1, day(Timestamp(0, 0)));
+  EXPECT_EQ(31, day(Timestamp(-1, 9000)));
+  EXPECT_EQ(30, day(Timestamp(1632989700, 0)));
+  EXPECT_EQ(1, day(Timestamp(1633076100, 0)));
+  EXPECT_EQ(6, day(Timestamp(1633508100, 0)));
+  EXPECT_EQ(31, day(Timestamp(1635668100, 0)));
+
+  setQueryTimeZone("Pacific/Apia");
+
+  EXPECT_EQ(std::nullopt, day(std::nullopt));
+  EXPECT_EQ(31, day(Timestamp(0, 0)));
+  EXPECT_EQ(31, day(Timestamp(-1, 9000)));
+  EXPECT_EQ(30, day(Timestamp(1632989700, 0)));
+  EXPECT_EQ(1, day(Timestamp(1633076100, 0)));
+  EXPECT_EQ(6, day(Timestamp(1633508100, 0)));
+  EXPECT_EQ(31, day(Timestamp(1635668100, 0)));
 }
 
 TEST_F(DateTimeFunctionsTest, dayOfWeekDate) {
@@ -431,5 +477,79 @@ TEST_F(DateTimeFunctionsTest, addMonths) {
       addMonths("2023-07-10", kMax),
       fmt::format("Integer overflow in add_months(2023-07-10, {})", kMax));
 }
+
+TEST_F(DateTimeFunctionsTest, quarter) {
+  const auto quarter = [&](std::optional<Timestamp> date) {
+    return evaluateOnce<int32_t>("quarter(c0)", date);
+  };
+  EXPECT_EQ(std::nullopt, quarter(std::nullopt));
+  EXPECT_EQ(1, quarter(Timestamp(0, 0)));
+  EXPECT_EQ(4, quarter(Timestamp(-1, 9000)));
+  EXPECT_EQ(4, quarter(Timestamp(4000000000, 0)));
+  EXPECT_EQ(4, quarter(Timestamp(4000000000, 123000000)));
+  EXPECT_EQ(2, quarter(Timestamp(990000000, 321000000)));
+  EXPECT_EQ(3, quarter(Timestamp(998423705, 321000000)));
+
+  setQueryTimeZone("Pacific/Apia");
+
+  EXPECT_EQ(std::nullopt, quarter(std::nullopt));
+  EXPECT_EQ(4, quarter(Timestamp(0, 0)));
+  EXPECT_EQ(4, quarter(Timestamp(-1, Timestamp::kMaxNanos)));
+  EXPECT_EQ(4, quarter(Timestamp(4000000000, 0)));
+  EXPECT_EQ(4, quarter(Timestamp(4000000000, 123000000)));
+  EXPECT_EQ(2, quarter(Timestamp(990000000, 321000000)));
+  EXPECT_EQ(3, quarter(Timestamp(998423705, 321000000)));
+}
+
+TEST_F(DateTimeFunctionsTest, quarterDate) {
+  const auto quarter = [&](std::optional<int32_t> date) {
+    return evaluateOnce<int32_t, int32_t>("quarter(c0)", {date}, {DATE()});
+  };
+  EXPECT_EQ(std::nullopt, quarter(std::nullopt));
+  EXPECT_EQ(1, quarter(0));
+  EXPECT_EQ(4, quarter(-1));
+  EXPECT_EQ(4, quarter(-40));
+  EXPECT_EQ(2, quarter(110));
+  EXPECT_EQ(3, quarter(200));
+  EXPECT_EQ(1, quarter(18262));
+  EXPECT_EQ(1, quarter(-18262));
+}
+
+TEST_F(DateTimeFunctionsTest, month) {
+  const auto month = [&](std::optional<Timestamp> date) {
+    return evaluateOnce<int32_t>("month(c0)", date);
+  };
+  EXPECT_EQ(std::nullopt, month(std::nullopt));
+  EXPECT_EQ(1, month(Timestamp(0, 0)));
+  EXPECT_EQ(12, month(Timestamp(-1, 9000)));
+  EXPECT_EQ(10, month(Timestamp(4000000000, 0)));
+  EXPECT_EQ(10, month(Timestamp(4000000000, 123000000)));
+  EXPECT_EQ(8, month(Timestamp(998474645, 321000000)));
+  EXPECT_EQ(8, month(Timestamp(998423705, 321000000)));
+
+  setQueryTimeZone("Pacific/Apia");
+
+  EXPECT_EQ(std::nullopt, month(std::nullopt));
+  EXPECT_EQ(12, month(Timestamp(0, 0)));
+  EXPECT_EQ(12, month(Timestamp(-1, Timestamp::kMaxNanos)));
+  EXPECT_EQ(10, month(Timestamp(4000000000, 0)));
+  EXPECT_EQ(10, month(Timestamp(4000000000, 123000000)));
+  EXPECT_EQ(8, month(Timestamp(998474645, 321000000)));
+  EXPECT_EQ(8, month(Timestamp(998423705, 321000000)));
+}
+
+TEST_F(DateTimeFunctionsTest, monthDate) {
+  const auto month = [&](std::optional<int32_t> date) {
+    return evaluateOnce<int32_t, int32_t>("month(c0)", {date}, {DATE()});
+  };
+  EXPECT_EQ(std::nullopt, month(std::nullopt));
+  EXPECT_EQ(1, month(0));
+  EXPECT_EQ(12, month(-1));
+  EXPECT_EQ(11, month(-40));
+  EXPECT_EQ(2, month(40));
+  EXPECT_EQ(1, month(18262));
+  EXPECT_EQ(1, month(-18262));
+}
+
 } // namespace
 } // namespace facebook::velox::functions::sparksql::test
