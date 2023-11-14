@@ -133,6 +133,7 @@ std::shared_ptr<WriterProperties> getArrowParquetWriterOptions(
   properties =
       properties->compression(getArrowParquetCompression(options.compression));
   properties = properties->data_pagesize(options.dataPageSize);
+  properties = properties->write_batch_size(2048);
   properties = properties->max_row_group_length(
       static_cast<int64_t>(flushPolicy->rowsInRowGroup()));
   properties = properties->codec_options(options.codecOptions);
