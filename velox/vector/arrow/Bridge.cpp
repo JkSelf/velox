@@ -21,7 +21,9 @@
 #include "velox/common/base/CheckedArithmetic.h"
 #include "velox/common/base/Exceptions.h"
 #include "velox/vector/ComplexVector.h"
+#include "velox/vector/DictionaryVector.h"
 #include "velox/vector/FlatVector.h"
+#include "velox/vector/VectorTypeUtils.h"
 #include "velox/vector/arrow/Abi.h"
 
 namespace facebook::velox {
@@ -647,7 +649,8 @@ void exportToArrowImpl(
     const Selection&,
     const BridgeOptions& options,
     ArrowArray&,
-    memory::MemoryPool*);
+    memory::MemoryPool*,
+    const ArrowOptions& arrowOptions);
 
 void exportRows(
     const RowVector& vec,
@@ -655,7 +658,8 @@ void exportRows(
     const BridgeOptions& options,
     ArrowArray& out,
     memory::MemoryPool* pool,
-    VeloxToArrowBridgeHolder& holder) {
+    VeloxToArrowBridgeHolder& holder,
+    const ArrowOptions& arrowOptions) {
   out.n_buffers = 1;
   holder.resizeChildren(vec.childrenSize());
   out.n_children = vec.childrenSize();
@@ -667,7 +671,8 @@ void exportRows(
           rows,
           options,
           *holder.allocateChild(i),
-          pool);
+          pool,
+          arrowOptions);
     } catch (const VeloxException&) {
       for (column_index_t j = 0; j < i; ++j) {
         // When exception is thrown, i th child is guaranteed unset.
@@ -729,7 +734,8 @@ void exportArrays(
     const BridgeOptions& options,
     ArrowArray& out,
     memory::MemoryPool* pool,
-    VeloxToArrowBridgeHolder& holder) {
+    VeloxToArrowBridgeHolder& holder,
+    const ArrowOptions& arrowOptions) {
   Selection childRows(vec.elements()->size());
   exportOffsets(vec, rows, out, pool, holder, childRows);
   holder.resizeChildren(1);
@@ -738,7 +744,8 @@ void exportArrays(
       childRows,
       options,
       *holder.allocateChild(0),
-      pool);
+      pool,
+      arrowOptions);
   out.n_children = 1;
   out.children = holder.getChildrenArrays();
 }
@@ -749,7 +756,8 @@ void exportMaps(
     const BridgeOptions& options,
     ArrowArray& out,
     memory::MemoryPool* pool,
-    VeloxToArrowBridgeHolder& holder) {
+    VeloxToArrowBridgeHolder& holder,
+    const ArrowOptions& arrowOptions) {
   RowVector child(
       pool,
       ROW({"key", "value"}, {vec.mapKeys()->type(), vec.mapValues()->type()}),
@@ -759,9 +767,41 @@ void exportMaps(
   Selection childRows(child.size());
   exportOffsets(vec, rows, out, pool, holder, childRows);
   holder.resizeChildren(1);
-  exportToArrowImpl(child, childRows, options, *holder.allocateChild(0), pool);
+  exportToArrowImpl(child, childRows, options, *holder.allocateChild(0), pool, arrowOptions);
   out.n_children = 1;
   out.children = holder.getChildrenArrays();
+}
+
+template <TypeKind kind>
+void flattenAndExport(
+    const BaseVector& vec,
+    const Selection& rows,
+    const BridgeOptions& options,
+    ArrowArray& out,
+    memory::MemoryPool* pool,
+    VeloxToArrowBridgeHolder& holder) {
+  using NativeType = typename velox::TypeTraits<kind>::NativeType;
+  SelectivityVector allRows(vec.size());
+  DecodedVector decoded(vec, allRows);
+  auto flatVector = BaseVector::create<FlatVector<NativeType>>(
+      vec.type(), decoded.size(), pool);
+
+  if (decoded.mayHaveNulls()) {
+    allRows.applyToSelected([&](vector_size_t row) {
+      if (decoded.isNullAt(row)) {
+        flatVector->setNull(row, true);
+      } else {
+        flatVector->set(row, decoded.valueAt<NativeType>(row));
+      }
+    });
+    exportValidityBitmap(*flatVector, rows, options, out, pool, holder);
+    exportFlat(*flatVector, rows, options, out, pool, holder);
+  } else {
+    allRows.applyToSelected([&](vector_size_t row) {
+      flatVector->set(row, decoded.valueAt<NativeType>(row));
+    });
+    exportFlat(*flatVector, rows, options, out, pool, holder);
+  }
 }
 
 void exportDictionary(
@@ -783,7 +823,22 @@ void exportDictionary(
   auto& values = *vec.valueVector()->loadedVector();
   out.dictionary = holder.allocateDictionary();
   exportToArrowImpl(
-      values, Selection(values.size()), options, *out.dictionary, pool);
+      values, Selection(values.size()), options, *out.dictionary, pool, ArrowOptions());
+}
+
+void exportFlattenedVector(
+    const BaseVector& vec,
+    const Selection& rows,
+    const BridgeOptions& options,
+    ArrowArray& out,
+    memory::MemoryPool* pool,
+    VeloxToArrowBridgeHolder& holder) {
+  VELOX_CHECK(
+      vec.valueVector() == nullptr || vec.wrappedVector()->isFlatEncoding(),
+      "An unsupported nested encoding was found.");
+  VELOX_CHECK(vec.isScalar(), "Flattening is only supported for scalar types.");
+  VELOX_DYNAMIC_SCALAR_TYPE_DISPATCH(
+      flattenAndExport, vec.typeKind(), vec, rows, options, out, pool, holder);
 }
 
 // Set the array as using "Null Layout" - no buffers are allocated.
@@ -831,7 +886,7 @@ void exportConstantValue(
         wrapInBufferViewAsViewer(vec.valuesAsVoid(), bufferSize),
         vec.mayHaveNulls() ? 1 : 0);
   }
-  exportToArrowImpl(*valuesVector, selection, options, out, pool);
+  exportToArrowImpl(*valuesVector, selection, options, out, pool, ArrowOptions());
 }
 
 // Velox constant vectors are exported as Arrow REE containing a single run
@@ -880,7 +935,8 @@ void exportToArrowImpl(
     const Selection& rows,
     const BridgeOptions& options,
     ArrowArray& out,
-    memory::MemoryPool* pool) {
+    memory::MemoryPool* pool,
+    const ArrowOptions& arrowOptions) {
   auto holder = std::make_unique<VeloxToArrowBridgeHolder>();
   out.buffers = holder->getArrowBuffers();
   out.length = rows.count();
@@ -894,21 +950,25 @@ void exportToArrowImpl(
       break;
     case VectorEncoding::Simple::ROW:
       exportRows(
-          *vec.asUnchecked<RowVector>(), rows, options, out, pool, *holder);
+          *vec.asUnchecked<RowVector>(), rows, options, out, pool, *holder, arrowOptions);
       break;
     case VectorEncoding::Simple::ARRAY:
       exportArrays(
-          *vec.asUnchecked<ArrayVector>(), rows, options, out, pool, *holder);
+          *vec.asUnchecked<ArrayVector>(), rows, options, out, pool, *holder, arrowOptions);
       break;
     case VectorEncoding::Simple::MAP:
       exportMaps(
-          *vec.asUnchecked<MapVector>(), rows, options, out, pool, *holder);
+          *vec.asUnchecked<MapVector>(), rows, options, out, pool, *holder, arrowOptions);
       break;
     case VectorEncoding::Simple::DICTIONARY:
-      exportDictionary(vec, rows, options, out, pool, *holder);
+       arrowOptions.flattenDictionary
+          ? exportFlattenedVector(vec, rows, options, out, pool, *holder)
+          : exportDictionary(vec, rows, options, out, pool, *holder);
       break;
     case VectorEncoding::Simple::CONSTANT:
-      exportConstant(vec, rows, options, out, pool, *holder);
+      arrowOptions.flattenConstant
+          ? exportFlattenedVector(vec, rows, options, out, pool, *holder)
+          : exportConstant(vec, rows, options, out, pool, *holder);
       break;
     default:
       VELOX_NYI("{} cannot be exported to Arrow yet.", vec.encoding());
@@ -1032,15 +1092,17 @@ void exportToArrow(
     const VectorPtr& vector,
     const BridgeOptions& options,
     ArrowArray& arrowArray,
-    memory::MemoryPool* pool) {
+    memory::MemoryPool* pool,
+    const ArrowOptions& arrowOptions) {
   exportToArrowImpl(
-      *vector, Selection(vector->size()), options, arrowArray, pool);
+      *vector, Selection(vector->size()), options, arrowArray, pool, arrowOptions);
 }
 
 void exportToArrow(
     const VectorPtr& vec,
     const BridgeOptions& options,
-    ArrowSchema& arrowSchema) {
+    ArrowSchema& arrowSchema,
+    const ArrowOptions& arrowOptions) {
   auto& type = vec->type();
 
   arrowSchema.name = nullptr;
@@ -1057,12 +1119,20 @@ void exportToArrow(
   if (vec->encoding() == VectorEncoding::Simple::DICTIONARY) {
     arrowSchema.n_children = 0;
     arrowSchema.children = nullptr;
-    arrowSchema.format = "i";
-    bridgeHolder->dictionary = std::make_unique<ArrowSchema>();
-    arrowSchema.dictionary = bridgeHolder->dictionary.get();
-    exportToArrow(vec->valueVector(), options, *arrowSchema.dictionary);
+    if (arrowOptions.flattenDictionary) {
+      // Dictionary data is flattened. Set the underlying data types.
+      arrowSchema.dictionary = nullptr;
+      arrowSchema.format =
+          exportArrowFormatStr(type, options, bridgeHolder->formatBuffer);
+    } else {
+      arrowSchema.format = "i";
+      bridgeHolder->dictionary = std::make_unique<ArrowSchema>();
+      arrowSchema.dictionary = bridgeHolder->dictionary.get();
+      exportToArrow(vec->valueVector(), options, *arrowSchema.dictionary);
+    }
 
-  } else if (vec->encoding() == VectorEncoding::Simple::CONSTANT) {
+  } else if (vec->encoding() == VectorEncoding::Simple::CONSTANT &&
+      !arrowOptions.flattenConstant) {
     // Arrow REE spec available in
     //  https://arrow.apache.org/docs/format/Columnar.html#run-end-encoded-layout
     arrowSchema.format = "+r";
@@ -1102,14 +1172,14 @@ void exportToArrow(
           0,
           std::vector<VectorPtr>{maps.mapKeys(), maps.mapValues()},
           maps.getNullCount());
-      exportToArrow(rows, options, *child);
+      exportToArrow(rows, options, *child, arrowOptions);
       child->name = "entries";
       bridgeHolder->setChildAtIndex(0, std::move(child), arrowSchema);
 
     } else if (type->kind() == TypeKind::ARRAY) {
       auto child = std::make_unique<ArrowSchema>();
       auto& arrays = *vec->asUnchecked<ArrayVector>();
-      exportToArrow(arrays.elements(), options, *child);
+      exportToArrow(arrays.elements(), options, *child, arrowOptions);
       // Name is required, and "item" is the default name used in arrow itself.
       child->name = "item";
       bridgeHolder->setChildAtIndex(0, std::move(child), arrowSchema);
@@ -1142,7 +1212,7 @@ void exportToArrow(
         try {
           auto& currentSchema = bridgeHolder->childrenOwned[i];
           currentSchema = std::make_unique<ArrowSchema>();
-          exportToArrow(rows.childAt(i), options, *currentSchema);
+          exportToArrow(rows.childAt(i), options, *currentSchema, arrowOptions);
           currentSchema->name = bridgeHolder->rowType->nameOf(i).data();
           arrowSchema.children[i] = currentSchema.get();
         } catch (const VeloxException& e) {

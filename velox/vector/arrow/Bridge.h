@@ -25,6 +25,11 @@
 struct ArrowArray;
 struct ArrowSchema;
 
+struct ArrowOptions {
+  bool flattenDictionary{false};
+  bool flattenConstant{false};
+};
+
 namespace facebook::velox {
 
 enum class TimestampUnit { kSecond = 0, kMilli = 1, kMicro = 2, kNano = 3 };
@@ -64,7 +69,8 @@ void exportToArrow(
     const VectorPtr& vector,
     const BridgeOptions& options,
     ArrowArray& arrowArray,
-    memory::MemoryPool* pool);
+    memory::MemoryPool* pool,
+    const ArrowOptions& arrowOptions = ArrowOptions{});
 
 /// Export the type of a Velox vector to an ArrowSchema.
 ///
@@ -85,7 +91,8 @@ void exportToArrow(
 ///
 /// NOTE: Since Arrow couples type and encoding, we need both Velox type and
 /// actual data (containing encoding) to create an ArrowSchema.
-void exportToArrow(const VectorPtr&, const BridgeOptions&, ArrowSchema&);
+void exportToArrow(const VectorPtr&, const BridgeOptions&, ArrowSchema&,
+    const ArrowOptions& = ArrowOptions{});
 
 /// Import an ArrowSchema into a Velox Type object.
 ///
