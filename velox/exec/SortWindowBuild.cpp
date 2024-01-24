@@ -15,6 +15,8 @@
  */
 
 #include "velox/exec/SortWindowBuild.h"
+#include <boost/stacktrace.hpp>
+#include <iostream>
 #include "velox/exec/MemoryReclaimer.h"
 
 namespace facebook::velox::exec {
@@ -89,6 +91,8 @@ void SortWindowBuild::ensureInputFits(const RowVectorPtr& input) {
 
   // Test-only spill path.
   if (spillConfig_->testSpillPct > 0) {
+    std::cout << "the spill is running in ensureInputFits" << std::flush
+              << std::endl;
     spill();
     return;
   }
@@ -149,6 +153,8 @@ void SortWindowBuild::setupSpiller() {
 }
 
 void SortWindowBuild::spill() {
+  std::cout << "the SortWindowBuild::spill() is running "
+            << boost::stacktrace::stacktrace() << std::flush << std::endl;
   if (spiller_ == nullptr) {
     setupSpiller();
   }
