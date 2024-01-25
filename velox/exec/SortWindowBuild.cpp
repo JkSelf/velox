@@ -97,6 +97,8 @@ void SortWindowBuild::ensureInputFits(const RowVectorPtr& input) {
     return;
   }
 
+  spill();
+
   auto [freeRows, outOfLineFreeBytes] = data_->freeSpace();
   const auto outOfLineBytes =
       data_->stringAllocator().retainedSize() - outOfLineFreeBytes;
@@ -236,6 +238,7 @@ void SortWindowBuild::noMoreInput() {
   }
 
   if (spiller_ != nullptr) {
+    std::cout << "the SortWindowBuild::noMoreInput() spill is running and the stacktrace is" << boost::stacktrace::stacktrace() << std::flush <<std::endl;
     // Spill remaining data to avoid running out of memory while sort-merging
     // spilled data.
     spill();
@@ -254,6 +257,8 @@ void SortWindowBuild::noMoreInput() {
 }
 
 void SortWindowBuild::loadNextPartitionFromSpill() {
+  std::cout << "the SortWindowBuild::loadNextPartitionFromSpill() is running and the stacktrace is" << boost::stacktrace::stacktrace() << std::flush <<std::endl;
+  
   sortedRows_.clear();
   data_->clear();
 
