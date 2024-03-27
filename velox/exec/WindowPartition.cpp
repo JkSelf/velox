@@ -146,36 +146,16 @@ std::pair<vector_size_t, vector_size_t> WindowPartition::computePeerBuffers(
   const auto lastPartitionRow = numRows() - 1;
   auto peerStart = prevPeerStart;
   auto peerEnd = prevPeerEnd;
+  for (auto i = start, j = 0; i < end; i++, j++) {
+    // When traversing input partition rows, the peers are the rows
+    // with the same values for the ORDER BY clause. These rows
+    // are equal in some ways and affect the results of ranking functions.
+    // This logic exploits the fact that all rows between the peerStart
+    // and peerEnd have the same values for rawPeerStarts and rawPeerEnds.
+    // So we can compute them just once and reuse across the rows in that peer
+    // interval. Note: peerStart and peerEnd can be maintained across
+    // getOutput calls. Hence, they are returned to the caller.
 
-  auto nextStart = start;
-  if (peerGroup_) {
-    peerEnd++;
-    nextStart = start + 1;
-    while (nextStart <= lastPartitionRow) {
-      if (peerCompare(
-              partition_[start - offsetInPartition_],
-              partition_[nextStart - offsetInPartition_])) {
-        break;
-      }
-      peerEnd++;
-      nextStart++;
-    }
-
-    for (auto j = start; j < nextStart; j++) {
-      rawPeerStarts[j - offsetInPartition_] = peerStart;
-      rawPeerEnds[j - offsetInPartition_] = peerEnd;
-    }
-  }
-
-  for (auto i = nextStart, j = (nextStart - start); i < end; ++i, ++j) {
-    // When traversing input partition rows, the peers are the rows with the
-    // same values for the ORDER BY clause. These rows are equal in some ways
-    // and affect the results of ranking functions. This logic exploits the fact
-    // that all rows between the peerStart and peerEnd have the same values for
-    // rawPeerStarts and rawPeerEnds. So we can compute them just once and reuse
-    // across the rows in that peer interval. Note: peerStart and peerEnd can be
-    // maintained across getOutput calls. Hence, they are returned to the
-    // caller.
     if (i == 0 || i >= peerEnd) {
       // Compute peerStart and peerEnd rows for the first row of the partition
       // or when past the previous peerGroup.
