@@ -12,9 +12,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+
+if(VELOX_ENABLE_HDFS)
+add_executable(
+  velox_hdfs_file_test HdfsFileSystemTest.cpp InsertIntoHdfsTest.cpp
+                       HdfsMiniCluster.cpp HdfsUtilTest.cpp LoadLibHdfsTest.cpp)
+endif()
+
+if(VELOX_ENABLE_HDFS3)
 add_executable(
   velox_hdfs_file_test HdfsFileSystemTest.cpp InsertIntoHdfsTest.cpp
                        HdfsMiniCluster.cpp HdfsUtilTest.cpp)
+endif()
 
 add_test(velox_hdfs_file_test velox_hdfs_file_test)
 target_link_libraries(
@@ -28,7 +37,10 @@ target_link_libraries(
   velox_exec
   gtest
   gtest_main
-  gmock)
+  gmock
+  arrow)
+
+target_include_directories(velox_hdfs_file_test PRIVATE ${HADOOP_HOME}/include/)
 
 target_compile_options(velox_hdfs_file_test
                        PRIVATE -Wno-deprecated-declarations)

@@ -16,7 +16,11 @@
 #include "velox/connectors/hive/storage_adapters/hdfs/HdfsFileSystem.h"
 #include <boost/format.hpp>
 #include <gmock/gmock-matchers.h>
+#ifdef VELOX_ENABLE_HDFS3
 #include <hdfs/hdfs.h>
+#elif VELOX_ENABLE_HDFS
+#include "velox/connectors/hive/storage_adapters/hdfs/HdfsInternal.h"
+#endif
 #include <atomic>
 #include <random>
 #include "HdfsMiniCluster.h"

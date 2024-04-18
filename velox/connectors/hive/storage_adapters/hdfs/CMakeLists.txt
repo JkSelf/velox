@@ -18,8 +18,21 @@ add_library(velox_hdfs RegisterHdfsFileSystem.cpp)
 
 if(VELOX_ENABLE_HDFS)
   target_sources(velox_hdfs PRIVATE HdfsFileSystem.cpp HdfsReadFile.cpp
+                                    HdfsWriteFile.cpp HdfsInternal.cpp)
+  target_link_libraries(velox_hdfs Folly::folly ${LIBHDFS} ${LIBJVM} xsimd
+                        arrow)
+
+  target_include_directories(velox_hdfs PRIVATE ${HADOOP_HOME}/include/)
+
+  if(${VELOX_BUILD_TESTING})
+    add_subdirectory(tests)
+  endif()
+endif()
+
+if(VELOX_ENABLE_HDFS3)
+  target_sources(velox_hdfs PRIVATE HdfsFileSystem.cpp HdfsReadFile.cpp
                                     HdfsWriteFile.cpp)
-  target_link_libraries(velox_hdfs Folly::folly ${LIBHDFS3} xsimd)
+  target_link_libraries(velox_hdfs Folly::folly ${LIBHDFS3} xsimd arrow)
 
   if(${VELOX_BUILD_TESTING})
     add_subdirectory(tests)

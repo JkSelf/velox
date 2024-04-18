@@ -16,7 +16,11 @@
 
 #include "HdfsReadFile.h"
 #include <folly/synchronization/CallOnce.h>
+#ifdef VELOX_ENABLE_HDFS3
 #include <hdfs/hdfs.h>
+#elif VELOX_ENABLE_HDFS
+#include "velox/connectors/hive/storage_adapters/hdfs/HdfsInternal.h"
+#endif
 
 namespace facebook::velox {
 
@@ -24,6 +28,7 @@ HdfsReadFile::HdfsReadFile(hdfsFS hdfs, const std::string_view path)
     : hdfsClient_(hdfs), filePath_(path) {
   fileInfo_ = hdfsGetPathInfo(hdfsClient_, filePath_.data());
   if (fileInfo_ == nullptr) {
+#ifdef VELOX_ENABLE_HDFS3
     auto error = hdfsGetLastError();
     auto errMsg = fmt::format(
         "Unable to get file path info for file: {}. got error: {}",
@@ -33,6 +38,12 @@ HdfsReadFile::HdfsReadFile(hdfsFS hdfs, const std::string_view path)
       VELOX_FILE_NOT_FOUND_ERROR(errMsg);
     }
     VELOX_FAIL(errMsg);
+#elif VELOX_ENABLE_HDFS
+
+    auto errMsg =
+        fmt::format("Unable to get file path info for file: {}", filePath_);
+    VELOX_FAIL(errMsg);
+#endif
   }
 }
 

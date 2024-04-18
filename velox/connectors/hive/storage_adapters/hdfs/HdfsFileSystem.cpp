@@ -14,7 +14,11 @@
  * limitations under the License.
  */
 #include "velox/connectors/hive/storage_adapters/hdfs/HdfsFileSystem.h"
+#ifdef VELOX_ENABLE_HDFS3
 #include <hdfs/hdfs.h>
+#elif VELOX_ENABLE_HDFS
+#include "velox/connectors/hive/storage_adapters/hdfs/HdfsInternal.h"
+#endif
 #include <mutex>
 #include "velox/connectors/hive/storage_adapters/hdfs/HdfsReadFile.h"
 #include "velox/connectors/hive/storage_adapters/hdfs/HdfsWriteFile.h"
@@ -31,12 +35,19 @@ class HdfsFileSystem::Impl {
     hdfsBuilderSetNameNode(builder, endpoint.host.c_str());
     hdfsBuilderSetNameNodePort(builder, atoi(endpoint.port.data()));
     hdfsClient_ = hdfsBuilderConnect(builder);
+#ifdef VELOX_ENABLE_HDFS3
     hdfsFreeBuilder(builder);
     VELOX_CHECK_NOT_NULL(
         hdfsClient_,
         "Unable to connect to HDFS: {}, got error: {}.",
         endpoint.identity(),
         hdfsGetLastError())
+#elif VELOX_ENABLE_HDFS
+    // builder already free in hdfsBuilderConnect, so no need to call
+    // hdfsFreeBuilder(builder).
+    VELOX_CHECK_NOT_NULL(
+        hdfsClient_, "Unable to connect to HDFS: {}.", endpoint.identity())
+#endif
   }
 
   ~Impl() {

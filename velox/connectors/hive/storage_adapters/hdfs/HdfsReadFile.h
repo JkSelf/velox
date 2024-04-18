@@ -14,7 +14,11 @@
  * limitations under the License.
  */
 
+#ifdef VELOX_ENABLE_HDFS3
 #include <hdfs/hdfs.h>
+#elif VELOX_ENABLE_HDFS
+#include "velox/connectors/hive/storage_adapters/hdfs/HdfsInternal.h"
+#endif
 #include "velox/common/file/File.h"
 
 namespace facebook::velox {
@@ -33,19 +37,28 @@ struct HdfsFile {
   void open(hdfsFS client, const std::string& path) {
     client_ = client;
     handle_ = hdfsOpenFile(client, path.data(), O_RDONLY, 0, 0, 0);
+#ifdef VELOX_ENABLE_HDFS3
     VELOX_CHECK_NOT_NULL(
         handle_,
         "Unable to open file {}. got error: {}",
         path,
         hdfsGetLastError());
+#elif VELOX_ENABLE_HDFS
+    VELOX_CHECK_NOT_NULL(handle_, "Unable to open file {}", path);
+#endif
   }
 
   void seek(uint64_t offset) const {
+    auto result = hdfsSeek(client_, handle_, offset);
+#ifdef VELOX_ENABLE_HDFS3
     VELOX_CHECK_EQ(
-        hdfsSeek(client_, handle_, offset),
+        result,
         0,
         "Cannot seek through HDFS file, error is : {}",
         std::string(hdfsGetLastError()));
+#elif VELOX_ENABLE_HDFS
+    VELOX_CHECK_EQ(result, 0, "Cannot seek through HDFS file");
+#endif
   }
 
   int32_t read(char* pos, uint64_t length) const {

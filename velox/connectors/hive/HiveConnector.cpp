@@ -25,7 +25,7 @@
 #ifdef VELOX_ENABLE_GCS
 #include "velox/connectors/hive/storage_adapters/gcs/RegisterGCSFileSystem.h" // @manual
 #endif
-#ifdef VELOX_ENABLE_HDFS3
+#if defined(VELOX_ENABLE_HDFS) || defined(VELOX_ENABLE_HDFS3)
 #include "velox/connectors/hive/storage_adapters/hdfs/RegisterHdfsFileSystem.h" // @manual
 #endif
 #ifdef VELOX_ENABLE_S3
@@ -143,7 +143,7 @@ void HiveConnectorFactory::initialize() {
 #ifdef VELOX_ENABLE_S3
     filesystems::registerS3FileSystem();
 #endif
-#ifdef VELOX_ENABLE_HDFS3
+#if defined(VELOX_ENABLE_HDFS) || defined(VELOX_ENABLE_HDFS3)
     filesystems::registerHdfsFileSystem();
 #endif
 #ifdef VELOX_ENABLE_GCS

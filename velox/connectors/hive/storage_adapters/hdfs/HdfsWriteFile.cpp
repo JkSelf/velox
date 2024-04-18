@@ -15,7 +15,11 @@
  */
 
 #include "velox/connectors/hive/storage_adapters/hdfs/HdfsWriteFile.h"
+#ifdef VELOX_ENABLE_HDFS3
 #include <hdfs/hdfs.h>
+#elif VELOX_ENABLE_HDFS
+#include "velox/connectors/hive/storage_adapters/hdfs/HdfsInternal.h"
+#endif
 
 namespace facebook::velox {
 HdfsWriteFile::HdfsWriteFile(
@@ -38,11 +42,15 @@ HdfsWriteFile::HdfsWriteFile(
       bufferSize,
       replication,
       blockSize);
+#ifdef VELOX_ENABLE_HDFS3
   VELOX_CHECK_NOT_NULL(
       hdfsFile_,
       "Failed to open hdfs file: {}, with error: {}",
       filePath_,
       std::string(hdfsGetLastError()));
+#elif VELOX_ENABLE_HDFS
+  VELOX_CHECK_NOT_NULL(hdfsFile_, "Failed to open hdfs file: {}", filePath_);
+#endif
 }
 
 HdfsWriteFile::~HdfsWriteFile() {
@@ -53,11 +61,15 @@ HdfsWriteFile::~HdfsWriteFile() {
 
 void HdfsWriteFile::close() {
   int success = hdfsCloseFile(hdfsClient_, hdfsFile_);
+#ifdef VELOX_ENABLE_HDFS3
   VELOX_CHECK_EQ(
       success,
       0,
       "Failed to close hdfs file: {}",
       std::string(hdfsGetLastError()));
+#elif VELOX_ENABLE_HDFS
+  VELOX_CHECK_EQ(success, 0, "Failed to close hdfs file.");
+#endif
   hdfsFile_ = nullptr;
 }
 
@@ -67,8 +79,12 @@ void HdfsWriteFile::flush() {
       "Cannot flush HDFS file because file handle is null, file path: {}",
       filePath_);
   int success = hdfsFlush(hdfsClient_, hdfsFile_);
+#ifdef VELOX_ENABLE_HDFS3
   VELOX_CHECK_EQ(
       success, 0, "Hdfs flush error: {}", std::string(hdfsGetLastError()));
+#elif VELOX_ENABLE_HDFS
+  VELOX_CHECK_EQ(success, 0, "Hdfs flush error.");
+#endif
 }
 
 void HdfsWriteFile::append(std::string_view data) {
@@ -81,11 +97,18 @@ void HdfsWriteFile::append(std::string_view data) {
       filePath_);
   int64_t totalWrittenBytes =
       hdfsWrite(hdfsClient_, hdfsFile_, std::string(data).c_str(), data.size());
+#ifdef VELOX_ENABLE_HDFS3
   VELOX_CHECK_EQ(
       totalWrittenBytes,
       data.size(),
       "Write failure in HDFSWriteFile::append {}",
       std::string(hdfsGetLastError()));
+#elif VELOX_ENABLE_HDFS
+  VELOX_CHECK_EQ(
+      totalWrittenBytes,
+      data.size(),
+      "Write failure in HDFSWriteFile::append.");
+#endif
 }
 
 uint64_t HdfsWriteFile::size() const {

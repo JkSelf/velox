@@ -15,7 +15,12 @@
  */
 #pragma once
 
+#ifdef VELOX_ENABLE_HDFS3
 #include <hdfs/hdfs.h>
+#elif VELOX_ENABLE_HDFS
+#include "velox/connectors/hive/storage_adapters/hdfs/HdfsInternal.h"
+#endif
+
 #include "velox/common/file/File.h"
 
 namespace facebook::velox {
