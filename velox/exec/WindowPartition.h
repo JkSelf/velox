@@ -23,6 +23,7 @@
 /// TODO: This implementation will be revised for Spill to disk semantics.
 
 namespace facebook::velox::exec {
+
 class WindowPartition {
  public:
   /// The WindowPartition is used by the Window operator and WindowFunction
@@ -42,9 +43,33 @@ class WindowPartition {
       const std::vector<std::pair<column_index_t, core::SortOrder>>&
           sortKeyInfo);
 
+  WindowPartition(
+      RowContainer* data,
+      const std::vector<column_index_t>& inputMapping,
+      const std::vector<std::pair<column_index_t, core::SortOrder>>&
+          sortKeyInfo);
+
+  void addRows(const std::vector<char*>& rows);
+
+  void clearOutputRows(vector_size_t numRows);
+
   /// Returns the number of rows in the current WindowPartition.
   vector_size_t numRows() const {
     return partition_.size();
+  }
+
+  // Returns the starting offset of the current partial window partition within
+  // the full partition.
+  vector_size_t startRow() const {
+    return startRow_;
+  }
+
+  bool isComplete() const {
+    return complete_;
+  }
+
+  void setComplete() {
+    complete_ = true;
   }
 
   /// Copies the values at 'columnIndex' into 'result' (starting at
@@ -162,9 +187,12 @@ class WindowPartition {
       const vector_size_t* rawPeerBounds,
       vector_size_t* rawFrameBounds) const;
 
+ protected:
   // The RowContainer associated with the partition.
   // It is owned by the WindowBuild that creates the partition.
   RowContainer* data_;
+
+  std::vector<char*> rows_;
 
   // folly::Range is for the partition rows iterator provided by the
   // Window operator. The pointers are to rows from a RowContainer owned
@@ -189,5 +217,10 @@ class WindowPartition {
   // corresponding indexes of their input arguments into this vector.
   // They will request for column vector values at the respective index.
   std::vector<exec::RowColumn> columns_;
+
+  // The partition offset of the first row in rows_.
+  vector_size_t startRow_ = 0;
+
+  bool complete_ = false;
 };
 } // namespace facebook::velox::exec

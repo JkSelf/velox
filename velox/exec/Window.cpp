@@ -15,6 +15,7 @@
  */
 #include "velox/exec/Window.h"
 #include "velox/exec/OperatorUtils.h"
+#include "velox/exec/RowsStreamingWindowBuild.h"
 #include "velox/exec/SortWindowBuild.h"
 #include "velox/exec/StreamingWindowBuild.h"
 #include "velox/exec/Task.h"
@@ -41,8 +42,13 @@ Window::Window(
   auto* spillConfig =
       spillConfig_.has_value() ? &spillConfig_.value() : nullptr;
   if (windowNode->inputsSorted()) {
-    windowBuild_ = std::make_unique<StreamingWindowBuild>(
-        windowNode, pool(), spillConfig, &nonReclaimableSection_);
+    if (supportRowsStreaming()) {
+      windowBuild_ = std::make_unique<RowsStreamingWindowBuild>(
+          windowNode_, pool(), spillConfig, &nonReclaimableSection_);
+    } else {
+      windowBuild_ = std::make_unique<StreamingWindowBuild>(
+          windowNode, pool(), spillConfig, &nonReclaimableSection_);
+    }
   } else {
     windowBuild_ = std::make_unique<SortWindowBuild>(
         windowNode, pool(), spillConfig, &nonReclaimableSection_, &spillStats_);
@@ -54,6 +60,7 @@ void Window::initialize() {
   VELOX_CHECK_NOT_NULL(windowNode_);
   createWindowFunctions();
   createPeerAndFrameBuffers();
+  windowBuild_->setNumRowsPerOutput(numRowsPerOutput_);
   windowNode_.reset();
 }
 
@@ -185,6 +192,38 @@ void Window::createWindowFunctions() {
     windowFrames_.push_back(
         createWindowFrame(windowNode_, windowNodeFunction.frame, inputType));
   }
+}
+
+// Support 'rank' and
+// 'row_number' functions and the agg window function with default frame.
+bool Window::supportRowsStreaming() {
+  bool supportsStreaming = false;
+
+  for (const auto& windowNodeFunction : windowNode_->windowFunctions()) {
+    const auto& functionName = windowNodeFunction.functionCall->name();
+    auto windowFunctionMetadata =
+        exec::getWindowFunctionMetadata(functionName).value();
+
+    if (windowFunctionMetadata.scope == Scope::kRows) {
+      const auto& frame = windowNodeFunction.frame;
+      bool isDefaultFrame =
+          (frame.startType ==
+               core::WindowNode::BoundType::kUnboundedPreceding &&
+           frame.endType == core::WindowNode::BoundType::kCurrentRow);
+      if (windowFunctionMetadata.supportsSlidingFrame ||
+          (!windowFunctionMetadata.supportsSlidingFrame && isDefaultFrame)) {
+        supportsStreaming = true;
+      } else {
+        supportsStreaming = false;
+        break;
+      }
+    } else {
+      supportsStreaming = false;
+      break;
+    }
+  }
+
+  return supportsStreaming;
 }
 
 void Window::addInput(RowVectorPtr input) {
@@ -575,8 +614,16 @@ vector_size_t Window::callApplyLoop(
   // This function requires that the currentPartition_ is available for output.
   VELOX_DCHECK_NOT_NULL(currentPartition_);
   while (numOutputRowsLeft > 0) {
-    auto rowsForCurrentPartition =
-        currentPartition_->numRows() - partitionOffset_;
+    auto totalRows = currentPartition_->numRows();
+    auto rowsForCurrentPartition = totalRows - partitionOffset_;
+
+    // For a partial window partition, currentPartition_->numRows() returns the
+    // number of remaining rows in the current partition that have not been
+    // processed.
+    if (!currentPartition_->isComplete() || rowsForCurrentPartition < 0) {
+      rowsForCurrentPartition = totalRows;
+    }
+
     if (rowsForCurrentPartition <= numOutputRowsLeft) {
       // Current partition can fit completely in the output buffer.
       // So output all its rows.
@@ -587,12 +634,19 @@ vector_size_t Window::callApplyLoop(
           result);
       resultIndex += rowsForCurrentPartition;
       numOutputRowsLeft -= rowsForCurrentPartition;
-      callResetPartition();
-      if (!currentPartition_) {
-        // The WindowBuild doesn't have any more partitions to process right
-        // now. So break until the next getOutput call.
+
+      if (currentPartition_->isComplete()) {
+        callResetPartition();
+
+        if (!currentPartition_) {
+          // The WindowBuild doesn't have any more partitions to process right
+          // now. So break until the next getOutput call.
+          break;
+        }
+      } else {
         break;
       }
+
     } else {
       // Current partition can fit only partially in the output buffer.
       // Call apply for the rows that can fit in the buffer and break from
@@ -629,12 +683,20 @@ RowVectorPtr Window::getOutput() {
     }
   }
 
+  if (!currentPartition_->isComplete() && currentPartition_->numRows() == 0) {
+    return nullptr;
+  }
+
   auto numOutputRows = std::min(numRowsPerOutput_, numRowsLeft);
   auto result = BaseVector::create<RowVector>(
       outputType_, numOutputRows, operatorCtx_->pool());
 
   // Compute the output values of window functions.
   auto numResultRows = callApplyLoop(numOutputRows, result);
+  if (currentPartition_) {
+    currentPartition_->clearOutputRows(numResultRows);
+  }
+
   return numResultRows < numOutputRows
       ? std::dynamic_pointer_cast<RowVector>(result->slice(0, numResultRows))
       : result;

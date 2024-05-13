@@ -31,6 +31,21 @@ struct WindowFunctionArg {
   std::optional<const column_index_t> index;
 };
 
+/// The scope for calculating the window function in a streaming
+/// manner. kRows indicates that the calculation begins as soon as rows are
+/// available within a single partition, without waiting for all data in the
+/// partition to be ready. kPartition indicates that the calculation begins only
+/// when all rows in a partition are ready.
+enum class Scope {
+  kPartition,
+  kRows,
+};
+
+struct WindowFunctionMetadata {
+  Scope scope;
+  bool supportsSlidingFrame;
+};
+
 class WindowFunction {
  public:
   explicit WindowFunction(
@@ -149,7 +164,8 @@ using WindowFunctionFactory = std::function<std::unique_ptr<WindowFunction>(
 bool registerWindowFunction(
     const std::string& name,
     std::vector<FunctionSignaturePtr> signatures,
-    WindowFunctionFactory factory);
+    WindowFunctionFactory factory,
+    WindowFunctionMetadata metadata = {Scope::kPartition, false});
 
 /// Returns signatures of the window function with the specified name.
 /// Returns empty std::optional if function with that name is not found.
@@ -159,7 +175,11 @@ std::optional<std::vector<FunctionSignaturePtr>> getWindowFunctionSignatures(
 struct WindowFunctionEntry {
   std::vector<FunctionSignaturePtr> signatures;
   WindowFunctionFactory factory;
+  WindowFunctionMetadata metadata;
 };
+
+std::optional<WindowFunctionMetadata> getWindowFunctionMetadata(
+    const std::string& name);
 
 using WindowFunctionMap = std::unordered_map<std::string, WindowFunctionEntry>;
 

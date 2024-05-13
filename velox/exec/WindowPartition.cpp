@@ -29,6 +29,36 @@ WindowPartition::WindowPartition(
   for (int i = 0; i < inputMapping_.size(); i++) {
     columns_.emplace_back(data_->columnAt(inputMapping_[i]));
   }
+
+  complete_ = true;
+}
+
+WindowPartition::WindowPartition(
+    RowContainer* data,
+    const std::vector<column_index_t>& inputMapping,
+    const std::vector<std::pair<column_index_t, core::SortOrder>>& sortKeyInfo)
+    : data_(data), inputMapping_(inputMapping), sortKeyInfo_(sortKeyInfo) {
+  for (int i = 0; i < inputMapping_.size(); i++) {
+    columns_.emplace_back(data_->columnAt(inputMapping_[i]));
+  }
+
+  rows_.clear();
+  partition_ = folly::Range(rows_.data(), rows_.size());
+  complete_ = false;
+}
+
+void WindowPartition::addRows(const std::vector<char*>& rows) {
+  rows_.insert(rows_.end(), rows.begin(), rows.end());
+  partition_ = folly::Range(rows_.data(), rows_.size());
+}
+
+void WindowPartition::clearOutputRows(vector_size_t numRows) {
+  if (!complete_ || (complete_ && rows_.size() > numRows)) {
+    data_->eraseRows(folly::Range<char**>(rows_.data(), numRows));
+    rows_.erase(rows_.begin(), rows_.begin() + numRows);
+    partition_ = folly::Range(rows_.data(), rows_.size());
+    startRow_ += numRows;
+  }
 }
 
 void WindowPartition::extractColumn(
@@ -51,7 +81,7 @@ void WindowPartition::extractColumn(
     vector_size_t resultOffset,
     const VectorPtr& result) const {
   RowContainer::extractColumn(
-      partition_.data() + partitionOffset,
+      partition_.data() + partitionOffset - startRow(),
       numRows,
       columns_[columnIndex],
       resultOffset,
@@ -141,9 +171,9 @@ std::pair<vector_size_t, vector_size_t> WindowPartition::computePeerBuffers(
     return compareRowsWithSortKeys(lhs, rhs);
   };
 
-  VELOX_CHECK_LE(end, numRows());
+  VELOX_CHECK_LE(end, numRows() + startRow());
 
-  auto lastPartitionRow = numRows() - 1;
+  auto lastPartitionRow = numRows() + startRow() - 1;
   auto peerStart = prevPeerStart;
   auto peerEnd = prevPeerEnd;
   for (auto i = start, j = 0; i < end; i++, j++) {
@@ -162,7 +192,9 @@ std::pair<vector_size_t, vector_size_t> WindowPartition::computePeerBuffers(
       peerStart = i;
       peerEnd = i;
       while (peerEnd <= lastPartitionRow) {
-        if (peerCompare(partition_[peerStart], partition_[peerEnd])) {
+        if (peerCompare(
+                partition_[peerStart - startRow()],
+                partition_[peerEnd - startRow()])) {
           break;
         }
         peerEnd++;
