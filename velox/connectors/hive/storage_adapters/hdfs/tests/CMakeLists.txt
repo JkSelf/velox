@@ -16,7 +16,7 @@
 if(VELOX_ENABLE_HDFS)
 add_executable(
   velox_hdfs_file_test HdfsFileSystemTest.cpp InsertIntoHdfsTest.cpp
-                       HdfsMiniCluster.cpp HdfsUtilTest.cpp LoadLibHdfsTest.cpp)
+                       HdfsMiniCluster.cpp HdfsUtilTest.cpp)
 endif()
 
 if(VELOX_ENABLE_HDFS3)

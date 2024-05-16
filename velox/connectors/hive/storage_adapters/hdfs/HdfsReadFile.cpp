@@ -19,7 +19,7 @@
 #ifdef VELOX_ENABLE_HDFS3
 #include <hdfs/hdfs.h>
 #elif VELOX_ENABLE_HDFS
-#include "velox/connectors/hive/storage_adapters/hdfs/HdfsInternal.h"
+#include <hdfs.h>
 #endif
 
 namespace facebook::velox {

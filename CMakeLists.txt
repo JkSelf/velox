@@ -244,36 +244,17 @@ if(VELOX_ENABLE_ABFS)
 endif()
 
 if(VELOX_ENABLE_HDFS)
-  if(DEFINED ENV{HADOOP_HOME} AND DEFINED ENV{JAVA_HOME})
-    message(STATUS "HADOOP_HOME is set to $ENV{HADOOP_HOME}")
-    message(STATUS "JAVA_HOME is set to $ENV{JAVA_HOME}")
-  
+  if(DEFINED ENV{HADOOP_HOME})
+    message(STATUS "Using HDFS environment: $ENV{HADOOP_HOME}")
     set(HADOOP_HOME $ENV{HADOOP_HOME})
-    set(JAVA_HOME $ENV{JAVA_HOME})
+    add_definitions(-DVELOX_ENABLE_HDFS)
   else()
-    message(FATAL_ERROR "Both HADOOP_HOME and JAVA_HOME need to be set when enabling libhdfs. Please set the HADOOP_HOME and JAVA_HOME environment variables.")
-    # You can stop the configuration process if both variables are required
-  endif()
-
-  find_library(
-    LIBHDFS
-    NAMES libhdfs.so
-    HINTS "${HADOOP_HOME}/lib/native" REQUIRED)
-  
-  find_library(
-    LIBJVM
-    NAMES libjvm.so
-    HINTS "${JAVA_HOME}/jre/lib/amd64/server/" REQUIRED)
-
-  add_definitions(-DVELOX_ENABLE_HDFS)
-endif()
-
-if(VELOX_ENABLE_HDFS3)
-  find_library(
-    LIBHDFS3
-    NAMES libhdfs3.so libhdfs3.dylib
-    HINTS "${CMAKE_SOURCE_DIR}/hawq/depends/libhdfs3/_build/src/" REQUIRED)
-  add_definitions(-DVELOX_ENABLE_HDFS3)
+    find_library(
+      LIBHDFS3
+      NAMES libhdfs3.so libhdfs3.dylib
+      HINTS "${CMAKE_SOURCE_DIR}/hawq/depends/libhdfs3/_build/src/" REQUIRED)
+    add_definitions(-DVELOX_ENABLE_HDFS3)
+  endif() 
 endif()
 
 if(VELOX_ENABLE_PARQUET)
