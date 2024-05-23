@@ -795,7 +795,8 @@ void makeAlternativePlans(
           .planNode()});
 
   // Use OrderBy + MergeJoin (if join type is inner or left).
-  if (joinNode->isInnerJoin() || joinNode->isLeftJoin()) {
+  if (joinNode->isInnerJoin() || joinNode->isLeftJoin() ||
+      joinNode->isLeftSemiFilterJoin()) {
     planNodeIdGenerator->reset();
     plans.push_back({JoinFuzzer::PlanWithSplits{
         PlanBuilder(planNodeIdGenerator)
