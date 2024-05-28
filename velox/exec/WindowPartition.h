@@ -134,7 +134,7 @@ class WindowPartition {
       vector_size_t prevPeerStart,
       vector_size_t prevPeerEnd,
       vector_size_t* rawPeerStarts,
-      vector_size_t* rawPeerEnds) const;
+      vector_size_t* rawPeerEnds);
 
   /// Sets in 'rawFrameBounds' the frame boundary for the k range
   /// preceding/following frame.
@@ -155,7 +155,10 @@ class WindowPartition {
       vector_size_t* rawFrameBounds) const;
 
  private:
-  bool compareRowsWithSortKeys(const char* lhs, const char* rhs) const;
+  bool compareRowsWithSortKeys(
+      const char* lhs,
+      const char* rhs,
+      RowContainer* data) const;
 
   // Searches for 'currentRow[frameColumn]' in 'orderByColumn' of rows between
   // 'start' and 'end' in the partition. 'firstMatch' specifies if first or last
@@ -217,5 +220,7 @@ class WindowPartition {
   // corresponding indexes of their input arguments into this vector.
   // They will request for column vector values at the respective index.
   std::vector<exec::RowColumn> columns_;
+
+  std::shared_ptr<FlatVector<StringView>> previousGroupLastRow_ = nullptr;
 };
 } // namespace facebook::velox::exec

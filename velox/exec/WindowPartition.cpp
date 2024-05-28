@@ -113,13 +113,15 @@ WindowPartition::extractNulls(
                    : std::nullopt;
 }
 
-bool WindowPartition::compareRowsWithSortKeys(const char* lhs, const char* rhs)
-    const {
+bool WindowPartition::compareRowsWithSortKeys(
+    const char* lhs,
+    const char* rhs,
+    RowContainer* data) const {
   if (lhs == rhs) {
     return false;
   }
   for (auto& key : sortKeyInfo_) {
-    if (auto result = data_->compare(
+    if (auto result = data->compare(
             lhs,
             rhs,
             key.first,
@@ -136,9 +138,10 @@ std::pair<vector_size_t, vector_size_t> WindowPartition::computePeerBuffers(
     vector_size_t prevPeerStart,
     vector_size_t prevPeerEnd,
     vector_size_t* rawPeerStarts,
-    vector_size_t* rawPeerEnds) const {
-  auto peerCompare = [&](const char* lhs, const char* rhs) -> bool {
-    return compareRowsWithSortKeys(lhs, rhs);
+    vector_size_t* rawPeerEnds) {
+  auto peerCompare =
+      [&](const char* lhs, const char* rhs, RowContainer* data) -> bool {
+    return compareRowsWithSortKeys(lhs, rhs, data);
   };
 
   VELOX_CHECK_LE(end, numRows());
@@ -146,7 +149,49 @@ std::pair<vector_size_t, vector_size_t> WindowPartition::computePeerBuffers(
   auto lastPartitionRow = numRows() - 1;
   auto peerStart = prevPeerStart;
   auto peerEnd = prevPeerEnd;
-  for (auto i = start, j = 0; i < end; i++, j++) {
+
+  auto nextStart = start;
+  if (previousGroupLastRow_) {
+    // rowContainer is used to compare whether the current first row is in same
+    // peer with the last row of previous batch.
+    auto rowContainer =
+        std::make_unique<RowContainer>(data_->keyTypes(), data_->pool());
+    auto serialized = BaseVector::create<FlatVector<StringView>>(
+        VARBINARY(), 1, data_->pool());
+    data_->extractSerializedRows(
+        folly::Range(partition_.data() + (start - offsetInPartition()), 1),
+        serialized);
+    rowContainer->clear();
+
+    auto firstRow = rowContainer->newRow();
+    rowContainer->storeSerializedRow(*serialized, 0, firstRow);
+    auto secondRow = rowContainer->newRow();
+    rowContainer->storeSerializedRow(*previousGroupLastRow_, 0, secondRow);
+
+    auto peerGroup = peerCompare(secondRow, firstRow, rowContainer.get());
+
+    if (!peerGroup) {
+      peerEnd++;
+      nextStart = start + 1;
+      while (nextStart <= lastPartitionRow) {
+        if (peerCompare(
+                partition_[start - offsetInPartition()],
+                partition_[nextStart - offsetInPartition()],
+                data_)) {
+          break;
+        }
+        peerEnd++;
+        nextStart++;
+      }
+
+      for (auto j = start; j < nextStart; j++) {
+        rawPeerStarts[j - offsetInPartition()] = peerStart;
+        rawPeerEnds[j - offsetInPartition()] = peerEnd;
+      }
+    }
+  }
+
+  for (auto i = nextStart, j = (nextStart - start); i < end; i++, j++) {
     // When traversing input partition rows, the peers are the rows
     // with the same values for the ORDER BY clause. These rows
     // are equal in some ways and affect the results of ranking functions.
@@ -164,7 +209,8 @@ std::pair<vector_size_t, vector_size_t> WindowPartition::computePeerBuffers(
       while (peerEnd <= lastPartitionRow) {
         if (peerCompare(
                 partition_[peerStart - offsetInPartition()],
-                partition_[peerEnd - offsetInPartition()])) {
+                partition_[peerEnd - offsetInPartition()],
+                data_)) {
           break;
         }
         peerEnd++;
@@ -174,6 +220,13 @@ std::pair<vector_size_t, vector_size_t> WindowPartition::computePeerBuffers(
     rawPeerStarts[j] = peerStart;
     rawPeerEnds[j] = peerEnd - 1;
   }
+
+  // Store last row of partial partition.
+  previousGroupLastRow_ =
+      BaseVector::create<FlatVector<StringView>>(VARBINARY(), 1, data_->pool());
+  data_->extractSerializedRows(
+      folly::Range(partition_.data() + (peerEnd - 1 - offsetInPartition()), 1),
+      previousGroupLastRow_);
   return {peerStart, peerEnd};
 }
 
