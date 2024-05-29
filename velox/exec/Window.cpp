@@ -211,7 +211,7 @@ bool Window::supportRowsStreaming() {
           (frame.startType ==
                core::WindowNode::BoundType::kUnboundedPreceding &&
            frame.endType == core::WindowNode::BoundType::kCurrentRow);
-      if (windowFunctionMetadata.supportsSlidingFrame || isDefaultFrame) {
+      if (!windowFunctionMetadata.onlySupportDefaultFrame || isDefaultFrame) {
         supportsStreaming = true;
       } else {
         supportsStreaming = false;
