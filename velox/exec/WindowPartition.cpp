@@ -151,7 +151,7 @@ std::pair<vector_size_t, vector_size_t> WindowPartition::computePeerBuffers(
   auto peerEnd = prevPeerEnd;
 
   auto nextStart = start;
-  if (previousGroupLastRow_) {
+  if (supportRowLevelStreaming() && previousGroupLastRow_) {
     // rowContainer is used to compare whether the current first row is in same
     // peer with the last row of previous batch.
     auto rowContainer =
@@ -222,11 +222,14 @@ std::pair<vector_size_t, vector_size_t> WindowPartition::computePeerBuffers(
   }
 
   // Store last row of partial partition.
-  previousGroupLastRow_ =
-      BaseVector::create<FlatVector<StringView>>(VARBINARY(), 1, data_->pool());
-  data_->extractSerializedRows(
-      folly::Range(partition_.data() + (peerEnd - 1 - offsetInPartition()), 1),
-      previousGroupLastRow_);
+  if (supportRowLevelStreaming()) {
+    previousGroupLastRow_ = BaseVector::create<FlatVector<StringView>>(
+        VARBINARY(), 1, data_->pool());
+    data_->extractSerializedRows(
+        folly::Range(
+            partition_.data() + (peerEnd - 1 - offsetInPartition()), 1),
+        previousGroupLastRow_);
+  }
   return {peerStart, peerEnd};
 }
 
