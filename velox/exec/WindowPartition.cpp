@@ -208,15 +208,14 @@ std::pair<vector_size_t, vector_size_t> WindowPartition::computePeerBuffers(
     auto peerGroup = peerCompare(secondRow, firstRow, rowContainer.get());
 
     if (!peerGroup) {
-      peerEnd++;
-      nextStart = start + 1;
-      while (nextStart <= lastPartitionRow) {
+      while (nextStart < end) {
         if (peerCompare(
                 partition_[start - startRow()],
                 partition_[nextStart - startRow()],
                 data_)) {
           break;
         }
+
         peerEnd++;
         nextStart++;
       }
@@ -243,7 +242,7 @@ std::pair<vector_size_t, vector_size_t> WindowPartition::computePeerBuffers(
       // or when past the previous peerGroup.
       peerStart = i;
       peerEnd = i;
-      while (peerEnd <= lastPartitionRow) {
+      while (peerEnd < end) {
         if (peerCompare(
                 partition_[peerStart - startRow()],
                 partition_[peerEnd - startRow()],
@@ -258,14 +257,6 @@ std::pair<vector_size_t, vector_size_t> WindowPartition::computePeerBuffers(
     rawPeerEnds[j] = peerEnd - 1;
   }
 
-  // // Store last row of partial partition.
-  // if (partial_) {
-  //   previousGroupLastRow_ = BaseVector::create<FlatVector<StringView>>(
-  //       VARBINARY(), 1, data_->pool());
-  //   data_->extractSerializedRows(
-  //       folly::Range(rows_.data() + (peerEnd - 1 - startRow()), 1),
-  //       previousGroupLastRow_);
-  // }
   return {peerStart, peerEnd};
 }
 
