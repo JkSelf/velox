@@ -198,6 +198,10 @@ class QueryConfig {
   static constexpr const char* kTopNRowNumberSpillEnabled =
       "topn_row_number_spill_enabled";
 
+  /// RowsStreamingWindow flag, only used in tests.
+  static constexpr const char* kRowsStreamingWindowEnabled =
+      "rows_streaming_window_enabled";
+
   /// The max row numbers to fill and spill for each spill run. This is used to
   /// cap the memory used for spilling. If it is zero, then there is no limit
   /// and spilling might run out of memory.
@@ -457,6 +461,10 @@ class QueryConfig {
 
   bool adaptiveFilterReorderingEnabled() const {
     return get<bool>(kAdaptiveFilterReorderingEnabled, true);
+  }
+
+  bool rowsStreamingWindowEnabled() const {
+    return get<bool>(kRowsStreamingWindowEnabled, false);
   }
 
   bool isLegacyCast() const {
