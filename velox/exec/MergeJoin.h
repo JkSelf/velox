@@ -121,9 +121,9 @@ class MergeJoin : public Operator {
         rightKeys_, batch, index, rightKeys_, otherBatch, otherIndex);
   }
 
-  /// Describes a contiguous set of rows on the left or right side of the join
-  /// with all join keys being the same. The set of rows may span multiple
-  /// batches of input.
+  /// Describes a contiguous set of rows on the left or right side of the
+  /// join with all join keys being the same. The set of rows may span
+  /// multiple batches of input.
   struct Match {
     // One or more batches of inputs that contain rows with matching keys.
     std::vector<RowVectorPtr> inputs;
