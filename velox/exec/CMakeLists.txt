@@ -62,8 +62,6 @@ add_library(
   PlanNodeStats.cpp
   PrefixSort.cpp
   ProbeOperatorState.cpp
-  RowsStreamingWindowBuild.cpp
-  RowsStreamingWindowPartition.cpp
   RowContainer.cpp
   RowNumber.cpp
   SortBuffer.cpp
