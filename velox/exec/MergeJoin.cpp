@@ -37,7 +37,7 @@ MergeJoin::MergeJoin(
   VELOX_USER_CHECK(
       joinNode_->isInnerJoin() || joinNode_->isLeftJoin() ||
           joinNode_->isLeftSemiFilterJoin() ||
-          joinNode_->isRightSemiFilterJoin(),
+          joinNode_->isRightSemiFilterJoin() || joinNode_->isRightJoin(),
       "Merge join supports only inner, left and left semi joins. Other join types are not supported yet.");
 }
 
@@ -89,7 +89,7 @@ void MergeJoin::initialize() {
   if (joinNode_->filter()) {
     initializeFilter(joinNode_->filter(), leftType, rightType);
 
-    if (joinNode_->isLeftJoin()) {
+    if (joinNode_->isLeftJoin() || joinNode_->isRightJoin()) {
       leftJoinTracker_ = LeftJoinTracker(outputBatchSize_, pool());
     }
   }
@@ -279,6 +279,24 @@ void MergeJoin::addOutputRowForLeftJoin(
   ++outputSize_;
 }
 
+void MergeJoin::addOutputRowForRightJoin(
+    const RowVectorPtr& right,
+    vector_size_t rightIndex) {
+  rawRightIndices_[outputSize_] = rightIndex;
+
+  for (const auto& projection : leftProjections_) {
+    const auto& target = output_->childAt(projection.outputChannel);
+    target->setNull(outputSize_, true);
+  }
+
+  if (leftJoinTracker_) {
+    // Record right-side row with no match on the left side.
+    leftJoinTracker_->addMiss(outputSize_);
+  }
+
+  ++outputSize_;
+}
+
 void MergeJoin::flattenRightProjections() {
   auto& children = output_->children();
 
@@ -352,13 +370,23 @@ bool MergeJoin::prepareOutput(
 
   // Create output dictionary vectors for left projections.
   std::vector<VectorPtr> localColumns(outputType_->size());
-  for (const auto& projection : leftProjections_) {
-    localColumns[projection.outputChannel] = BaseVector::wrapInDictionary(
-        {},
-        leftIndices_,
-        outputBatchSize_,
-        newLeft->childAt(projection.inputChannel));
+  if (newLeft == nullptr) {
+    for (const auto& projection : leftProjections_) {
+      localColumns[projection.outputChannel] = BaseVector::create(
+          outputType_->childAt(projection.outputChannel),
+          outputBatchSize_,
+          operatorCtx_->pool());
+    }
+  } else {
+    for (const auto& projection : leftProjections_) {
+      localColumns[projection.outputChannel] = BaseVector::wrapInDictionary(
+          {},
+          leftIndices_,
+          outputBatchSize_,
+          newLeft->childAt(projection.inputChannel));
+    }
   }
+
   currentLeft_ = newLeft;
 
   // Create right side projection outputs.
@@ -696,6 +724,35 @@ RowVectorPtr MergeJoin::doGetOutput() {
         output_->resize(outputSize_);
         return std::move(output_);
       }
+    } else if (isRightJoin(joinType_)) {
+      if (rightInput_ && noMoreInput_) {
+        // If output_ is currently wrapping a different buffer, return it
+        // first.
+        if (prepareOutput(nullptr, rightInput_)) {
+          output_->resize(outputSize_);
+          return std::move(output_);
+        }
+
+        while (true) {
+          if (outputSize_ == outputBatchSize_) {
+            return std::move(output_);
+          }
+
+          addOutputRowForRightJoin(rightInput_, rightIndex_);
+
+          ++rightIndex_;
+          if (rightIndex_ == rightInput_->size()) {
+            // Ran out of rows on the right side.
+            rightInput_ = nullptr;
+            return nullptr;
+          }
+        }
+      }
+
+      if (noMoreRightInput_ && output_) {
+        output_->resize(outputSize_);
+        return std::move(output_);
+      }
     } else {
       if (noMoreInput_ || noMoreRightInput_) {
         if (output_) {
@@ -741,7 +798,24 @@ RowVectorPtr MergeJoin::doGetOutput() {
 
     // Catch up rightInput_ with input_.
     while (compareResult > 0) {
-      rightIndex_ = firstNonNull(rightInput_, rightKeys_, rightIndex_ + 1);
+      if (isRightJoin(joinType_)) {
+        // If output_ is currently wrapping a different buffer, return it
+        // first.
+        if (prepareOutput(rightInput_, nullptr)) {
+          output_->resize(outputSize_);
+          return std::move(output_);
+        }
+
+        if (outputSize_ == outputBatchSize_) {
+          return std::move(output_);
+        }
+
+        addOutputRowForRightJoin(rightInput_, rightIndex_);
+        ++rightIndex_;
+      } else {
+        rightIndex_ = firstNonNull(rightInput_, rightKeys_, rightIndex_ + 1);
+      }
+
       if (rightIndex_ == rightInput_->size()) {
         // Ran out of rows on the right side.
         rightInput_ = nullptr;
@@ -835,9 +909,16 @@ RowVectorPtr MergeJoin::applyFilter(const RowVectorPtr& output) {
     auto onMiss = [&](auto row) {
       rawIndices[numPassed++] = row;
 
-      for (auto& projection : rightProjections_) {
-        auto target = output->childAt(projection.outputChannel);
-        target->setNull(row, true);
+      if (!isRightJoin(joinType_)) {
+        for (auto& projection : rightProjections_) {
+          auto target = output->childAt(projection.outputChannel);
+          target->setNull(row, true);
+        }
+      } else {
+        for (auto& projection : leftProjections_) {
+          auto target = output->childAt(projection.outputChannel);
+          target->setNull(row, true);
+        }
       }
     };
 
