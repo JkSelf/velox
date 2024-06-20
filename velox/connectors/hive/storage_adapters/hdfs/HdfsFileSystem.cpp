@@ -14,11 +14,13 @@
  * limitations under the License.
  */
 #include "velox/connectors/hive/storage_adapters/hdfs/HdfsFileSystem.h"
-#include <hdfs/hdfs.h>
+#include <arrow/status.h>
 #include <mutex>
 #include "velox/common/config/Config.h"
 #include "velox/connectors/hive/storage_adapters/hdfs/HdfsReadFile.h"
 #include "velox/connectors/hive/storage_adapters/hdfs/HdfsWriteFile.h"
+#include "velox/connectors/hive/storage_adapters/hdfs/hdfs_internal.h"
+#include "velox/core/Config.h"
 
 namespace facebook::velox::filesystems {
 std::string_view HdfsFileSystem::kScheme("hdfs://");
@@ -29,11 +31,17 @@ class HdfsFileSystem::Impl {
   explicit Impl(
       const config::ConfigBase* config,
       const HdfsServiceEndpoint& endpoint) {
-    auto builder = hdfsNewBuilder();
-    hdfsBuilderSetNameNode(builder, endpoint.host.c_str());
-    hdfsBuilderSetNameNodePort(builder, atoi(endpoint.port.data()));
-    hdfsClient_ = hdfsBuilderConnect(builder);
-    hdfsFreeBuilder(builder);
+     auto status = ConnectLibHdfs(&driver_);
+    if (!status.ok()) {
+      LOG(ERROR) << "ConnectLibHdfs failed ";
+    }
+
+    // connect to HDFS with the builder object
+    hdfsBuilder* builder = driver_->NewBuilder();
+    driver_->BuilderSetNameNode(builder, endpoint.host.c_str());
+    driver_->BuilderSetNameNodePort(builder, atoi(endpoint.port.data()));
+    driver_->BuilderSetForceNewInstance(builder);
+    hdfsClient_ = driver_->BuilderConnect(builder);
     VELOX_CHECK_NOT_NULL(
         hdfsClient_,
         "Unable to connect to HDFS: {}, got error: {}.",
@@ -43,7 +51,8 @@ class HdfsFileSystem::Impl {
 
   ~Impl() {
     LOG(INFO) << "Disconnecting HDFS file system";
-    int disconnectResult = hdfsDisconnect(hdfsClient_);
+    int disconnectResult = driver_->Disconnect(hdfsClient_);
+    ;
     if (disconnectResult != 0) {
       LOG(WARNING) << "hdfs disconnect failure in HdfsReadFile close: "
                    << errno;
@@ -54,8 +63,13 @@ class HdfsFileSystem::Impl {
     return hdfsClient_;
   }
 
+  arrow::io::internal::LibHdfsShim* hdfsShim() {
+    return driver_;
+  }
+
  private:
   hdfsFS hdfsClient_;
+  arrow::io::internal::LibHdfsShim* driver_;
 };
 
 HdfsFileSystem::HdfsFileSystem(
@@ -79,13 +93,15 @@ std::unique_ptr<ReadFile> HdfsFileSystem::openFileForRead(
     path.remove_prefix(index);
   }
 
-  return std::make_unique<HdfsReadFile>(impl_->hdfsClient(), path);
+  return std::make_unique<HdfsReadFile>(
+      impl_->hdfsShim(), impl_->hdfsClient(), path);
 }
 
 std::unique_ptr<WriteFile> HdfsFileSystem::openFileForWrite(
     std::string_view path,
     const FileOptions& /*unused*/) {
-  return std::make_unique<HdfsWriteFile>(impl_->hdfsClient(), path);
+  return std::make_unique<HdfsWriteFile>(
+      impl_->hdfsShim(), impl_->hdfsClient(), path);
 }
 
 bool HdfsFileSystem::isHdfsFile(const std::string_view filePath) {

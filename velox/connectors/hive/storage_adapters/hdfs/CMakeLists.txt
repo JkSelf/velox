@@ -22,8 +22,9 @@ if(VELOX_ENABLE_HDFS)
     PRIVATE
     HdfsFileSystem.cpp
     HdfsReadFile.cpp
-    HdfsWriteFile.cpp)
-  velox_link_libraries(velox_hdfs Folly::folly ${LIBHDFS3} xsimd)
+    HdfsWriteFile.cpp
+    hdfs_internal.cc)
+  velox_link_libraries(velox_hdfs Folly::folly xsimd arrow)
 
   if(${VELOX_BUILD_TESTING})
     add_subdirectory(tests)
