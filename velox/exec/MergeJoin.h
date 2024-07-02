@@ -225,7 +225,7 @@ class MergeJoin : public Operator {
   /// Evaluates join filter on 'filterInput_' and returns 'output' that contains
   /// a subset of rows on which the filter passed. Returns nullptr if no rows
   /// passed the filter.
-  RowVectorPtr applyFilter(const RowVectorPtr& output);
+  RowVectorPtr applyFilter(RowVectorPtr& output);
 
   /// Evaluates 'filter_' on the specified rows of 'filterInput_' and decodes
   /// the result using 'decodedFilterResult_'.
@@ -467,6 +467,8 @@ class MergeJoin : public Operator {
   // Latest batch of input from the right side.
   RowVectorPtr rightInput_;
 
+  RowVectorPtr tmpRightInput_;
+
   // Row number on the left side (input_) to process next.
   vector_size_t index_{0};
 
@@ -480,6 +482,8 @@ class MergeJoin : public Operator {
   std::optional<Match> rightMatch_;
 
   RowVectorPtr output_;
+
+  RowVectorPtr fullOuterOutput_;
 
   // Number of rows accumulated in the output_.
   vector_size_t outputSize_;
