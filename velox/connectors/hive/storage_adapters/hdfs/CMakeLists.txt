@@ -16,7 +16,7 @@
 
 velox_add_library(velox_hdfs RegisterHdfsFileSystem.cpp)
 
-if(VELOX_ENABLE_HDFS)
+if(DEFINED VELOX_ENABLE_HDFS OR DEFINED VELOX_ENABLE_HDFS3)
   velox_sources(
     velox_hdfs
     PRIVATE
