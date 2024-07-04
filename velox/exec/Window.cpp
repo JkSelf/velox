@@ -19,6 +19,7 @@
 #include "velox/exec/SortWindowBuild.h"
 #include "velox/exec/StreamingWindowBuild.h"
 #include "velox/exec/Task.h"
+#include <iostream>
 
 namespace facebook::velox::exec {
 
@@ -39,6 +40,7 @@ Window::Window(
       windowNode_(windowNode),
       currentPartition_(nullptr),
       stringAllocator_(pool()) {
+  pool()->setDebug(true);
   auto* spillConfig =
       spillConfig_.has_value() ? &spillConfig_.value() : nullptr;
   if (windowNode->inputsSorted()) {
@@ -688,6 +690,9 @@ RowVectorPtr Window::getOutput() {
     // same peer group.
     return nullptr;
   }
+  this->pool()->setDebug(true);
+  this->pool()->leakCheckDbg();
+  std::cout << this->pool()->root()->treeMemoryUsage() << std::endl;
 
   auto numOutputRows = std::min(numRowsPerOutput_, numRowsLeft);
   auto result = BaseVector::create<RowVector>(

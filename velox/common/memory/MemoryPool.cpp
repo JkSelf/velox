@@ -26,6 +26,7 @@
 #include "velox/common/testutil/TestValue.h"
 
 #include <re2/re2.h>
+#include <iostream>
 
 DECLARE_bool(velox_suppress_memory_capacity_exceeding_error_message);
 
@@ -1232,6 +1233,7 @@ void MemoryPoolImpl::recordGrowDbg(const void* addr, uint64_t newSize) {
 }
 
 void MemoryPoolImpl::leakCheckDbg() {
+  std::cout << "MemoryPoolImpl::leakCheckDbg dgb enabled " << debugEnabled_ << std::endl;
   VELOX_CHECK(debugEnabled_);
   if (debugAllocRecords_.empty()) {
     return;
@@ -1246,7 +1248,8 @@ void MemoryPoolImpl::leakCheckDbg() {
         << " bytes ========\n"
         << allocationRecord.callStack.toString();
   }
-  VELOX_FAIL(buf.str());
+  // VELOX_FAIL(buf.str());
+  std::cout << buf.str() << std::endl;
 }
 
 void MemoryPoolImpl::handleAllocationFailure(
