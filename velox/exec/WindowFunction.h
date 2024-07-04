@@ -31,23 +31,6 @@ struct WindowFunctionArg {
   std::optional<const column_index_t> index;
 };
 
-/// The scope for calculating the window function. kRows indicates that the
-/// calculation begins as soon as rows are available within a single partition,
-/// without waiting for all data in the partition to be ready. kPartition
-/// indicates that the calculation begins only when all rows in a partition are
-/// ready.
-enum class Scope {
-  kPartition,
-  kRows,
-};
-
-/// Indicates whether the function is for an aggregate used as a window
-/// function.
-struct WindowFunctionMetadata {
-  Scope scope;
-  bool isAggregateWindow;
-};
-
 class WindowFunction {
  public:
   explicit WindowFunction(
@@ -166,8 +149,7 @@ using WindowFunctionFactory = std::function<std::unique_ptr<WindowFunction>(
 bool registerWindowFunction(
     const std::string& name,
     std::vector<FunctionSignaturePtr> signatures,
-    WindowFunctionFactory factory,
-    WindowFunctionMetadata metadata = {Scope::kPartition, false});
+    WindowFunctionFactory factory);
 
 /// Returns signatures of the window function with the specified name.
 /// Returns empty std::optional if function with that name is not found.
@@ -177,12 +159,7 @@ std::optional<std::vector<FunctionSignaturePtr>> getWindowFunctionSignatures(
 struct WindowFunctionEntry {
   std::vector<FunctionSignaturePtr> signatures;
   WindowFunctionFactory factory;
-  WindowFunctionMetadata metadata;
 };
-
-/// Returns std::nullopt if the function doesn't exist in the WindowFunctionMap.
-std::optional<WindowFunctionMetadata> getWindowFunctionMetadata(
-    const std::string& name);
 
 using WindowFunctionMap = std::unordered_map<std::string, WindowFunctionEntry>;
 
