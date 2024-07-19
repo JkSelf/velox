@@ -687,6 +687,7 @@ RowVectorPtr MergeJoin::getOutput() {
           if (rightIndex_ == rightInput_->size()) {
             // Ran out of rows on the right side.
             rightInput_ = nullptr;
+            rightSource_->close();
           }
         } else {
           noMoreRightInput_ = true;
@@ -815,6 +816,7 @@ RowVectorPtr MergeJoin::doGetOutput() {
           if (rightIndex_ == rightInput_->size()) {
             // Ran out of rows on the right side.
             rightInput_ = nullptr;
+            rightSource_->close();
             return nullptr;
           }
         }
@@ -892,6 +894,7 @@ RowVectorPtr MergeJoin::doGetOutput() {
       if (rightIndex_ == rightInput_->size()) {
         // Ran out of rows on the right side.
         rightInput_ = nullptr;
+        rightSource_->close();
         return nullptr;
       }
       compareResult = compare();
@@ -943,6 +946,7 @@ RowVectorPtr MergeJoin::doGetOutput() {
       if (rightIndex_ == rightInput_->size()) {
         // Ran out of rows on the right side.
         rightInput_ = nullptr;
+        rightSource_->close();
       }
 
       if (addToOutput()) {
