@@ -105,7 +105,7 @@ struct WriterOptions {
       columnCompressionsMap;
   uint8_t parquetWriteTimestampUnit =
       static_cast<uint8_t>(TimestampUnit::kNano);
-  bool writeInt96AsTimestamp = false;
+  std::string parquetWriteTimestampTimeZone = "";
 };
 
 // Writes Velox vectors into  a DataSink using Arrow Parquet writer.

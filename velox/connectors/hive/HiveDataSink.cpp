@@ -743,6 +743,11 @@ uint32_t HiveDataSink::appendWriter(const HiveWriterId& id) {
         hiveConfig_->parquetWriteTimestampUnit(connectorSessionProperties);
   }
 
+  if (!options->parquetWriteTimestampTimeZone) {
+    options->parquetWriteTimestampTimeZone =
+        std::optional(connectorQueryCtx_->sessionTimezone());
+  }
+
   if (!options->orcMinCompressionSize) {
     options->orcMinCompressionSize = std::optional(
         hiveConfig_->orcWriterMinCompressionSize(connectorSessionProperties));

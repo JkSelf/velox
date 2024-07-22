@@ -237,6 +237,7 @@ Writer::Writer(
   }
   options_.timestampUnit =
       static_cast<TimestampUnit>(options.parquetWriteTimestampUnit);
+  options_.timestampTimeZone = options.parquetWriteTimestampTimeZone;
   arrowContext_->properties =
       getArrowParquetWriterOptions(options, flushPolicy_);
   setMemoryReclaimers();
@@ -398,6 +399,11 @@ parquet::WriterOptions getParquetOptions(
   if (options.parquetWriteTimestampUnit.has_value()) {
     parquetOptions.parquetWriteTimestampUnit =
         options.parquetWriteTimestampUnit.value();
+  }
+
+  if (options.parquetWriteTimestampTimeZone.has_value()) {
+    parquetOptions.parquetWriteTimestampTimeZone =
+        options.parquetWriteTimestampTimeZone.value();
   }
   return parquetOptions;
 }

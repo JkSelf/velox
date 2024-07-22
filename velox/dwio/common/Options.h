@@ -613,6 +613,7 @@ struct WriterOptions {
   std::optional<bool> orcWriterStringDictionaryEncodingEnabled{std::nullopt};
   std::map<std::string, std::string> serdeParameters;
   std::optional<uint8_t> parquetWriteTimestampUnit;
+  std::optional<std::string> parquetWriteTimestampTimeZone;
   std::optional<uint8_t> zlibCompressionLevel;
   std::optional<uint8_t> zstdCompressionLevel;
 
