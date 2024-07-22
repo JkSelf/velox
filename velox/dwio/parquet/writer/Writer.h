@@ -105,6 +105,7 @@ struct WriterOptions {
       columnCompressionsMap;
   uint8_t parquetWriteTimestampUnit =
       static_cast<uint8_t>(TimestampUnit::kNano);
+  bool writeInt96AsTimestamp = true;
   std::string parquetWriteTimestampTimeZone = "";
 };
 
