@@ -13,7 +13,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-#include <iostream>
 #include "velox/common/base/tests/GTestUtils.h"
 #include "velox/common/file/FileSystems.h"
 #include "velox/exec/PlanNodeStats.h"
@@ -79,6 +78,65 @@ TEST_F(WindowTest, spill) {
   ASSERT_GT(stats.spilledRows, 0);
   ASSERT_GT(stats.spilledFiles, 0);
   ASSERT_GT(stats.spilledPartitions, 0);
+}
+
+TEST_F(WindowTest, rowBasedStreamingWindowOOM) {
+  const vector_size_t size = 100'000;
+  auto data = makeRowVector(
+      {"d", "p", "s"},
+      {
+          // Payload.
+          makeFlatVector<int64_t>(size, [](auto row) { return row; }),
+          // Partition key.
+          makeFlatVector<int16_t>(size, [](auto row) { return row; }),
+          // Sorting key.
+          makeFlatVector<int32_t>(size, [](auto row) { return row; }),
+      });
+
+  createDuckDbTable({data});
+
+  // Abstract the common values vector split.
+  auto valuesSplit = split(data, 10);
+
+  auto planNodeIdGenerator = std::make_shared<core::PlanNodeIdGenerator>();
+  CursorParameters params;
+  auto queryCtx = core::QueryCtx::create(executor_.get());
+  queryCtx->testingOverrideMemoryPool(memory::memoryManager()->addRootPool(
+      queryCtx->queryId(), 2418624, exec::MemoryReclaimer::create()));
+
+  params.queryCtx = queryCtx;
+
+  auto testWindowBuild = [&](bool useStreamingWindow) {
+    if (useStreamingWindow) {
+      params.planNode =
+          PlanBuilder(planNodeIdGenerator)
+              .values(valuesSplit)
+              .streamingWindow(
+                  {"row_number() over (partition by p order by s)"})
+              .project({"d"})
+              .singleAggregation({}, {"sum(d)"})
+              .planNode();
+
+      readCursor(params, [](Task*) {});
+    } else {
+      params.planNode =
+          PlanBuilder(planNodeIdGenerator)
+              .values(valuesSplit)
+              .window({"row_number() over (partition by p order by s)"})
+              .project({"d"})
+              .singleAggregation({}, {"sum(d)"})
+              .planNode();
+
+      VELOX_ASSERT_THROW(
+          readCursor(params, [](Task*) {}),
+          "Exceeded memory pool capacity after attempt to grow capacity through "
+          "arbitration. Requestor pool name 'op.1.0.0.Window', request size 2.00MB, memory pool capacity 1.00MB, memory pool max capacity 2.31MB, memory manager capacity 8.00GB, current usage 280.00KB");
+    }
+  };
+  // RowStreamingWindow will not OOM.
+  testWindowBuild(true);
+  // SortBasedWindow will OOM.
+  testWindowBuild(false);
 }
 
 TEST_F(WindowTest, rowBasedStreamingWindowMemoryUsage) {
