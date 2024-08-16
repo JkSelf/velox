@@ -198,7 +198,7 @@ std::pair<vector_size_t, vector_size_t> WindowPartition::computePeerBuffers(
 
   VELOX_CHECK_LE(end, numRows() + startRow());
 
-  const auto lastPartitionRow = numRows() + startRow() - 1;
+  auto lastPartitionRow = numRows() + startRow() - 1;
   auto peerStart = prevPeerStart;
   auto peerEnd = prevPeerEnd;
 

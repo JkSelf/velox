@@ -63,7 +63,8 @@ void WindowFuzzer::addWindowFunctionSignatures(
 std::string WindowFuzzer::generateFrameClause(
     std::vector<std::string>& argNames,
     std::vector<TypePtr>& argTypes,
-    bool& isRowsFrame) {
+    bool& isRowsFrame,
+    bool& isDefaultFrame) {
   auto frameType = [](int value) -> const std::string {
     switch (value) {
       case 0:
@@ -156,6 +157,13 @@ std::string WindowFuzzer::generateFrameClause(
   auto endBoundMinIdx = std::max(0, static_cast<int>(startBoundIndex) - 1);
   auto endBoundIndex = boost::random::uniform_int_distribution<uint32_t>(
       endBoundMinIdx, endBoundOptions.size() - 1)(rng_);
+  
+  isDefaultFrame =
+      (startBoundOptions[startBoundIndex] ==
+           core::WindowNode::BoundType::kUnboundedPreceding &&
+       endBoundOptions[endBoundIndex] ==
+           core::WindowNode::BoundType::kCurrentRow);
+
   auto frameStartBound = frameBound(startBoundOptions[startBoundIndex], "k0");
   auto frameEndBound = frameBound(endBoundOptions[endBoundIndex], "k1");
 
@@ -248,8 +256,9 @@ void WindowFuzzer::go() {
     }
     const auto partitionKeys = generateSortingKeys("p", argNames, argTypes);
     bool isRowsFrame = false;
+    bool isDefaultFrame = false;
     const auto frameClause =
-        generateFrameClause(argNames, argTypes, isRowsFrame);
+        generateFrameClause(argNames, argTypes, isRowsFrame, isDefaultFrame);
     const auto input = generateInputDataWithRowNumber(
         argNames, argTypes, partitionKeys, signature);
     // If the function is order-dependent or uses "rows" frame, sort all input

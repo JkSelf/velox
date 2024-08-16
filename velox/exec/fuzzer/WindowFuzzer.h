@@ -85,7 +85,8 @@ class WindowFuzzer : public AggregationFuzzerBase {
   std::string generateFrameClause(
       std::vector<std::string>& argNames,
       std::vector<TypePtr>& argTypes,
-      bool& isRowsFrame);
+      bool& isRowsFrame,
+      bool& isDefaultFrame);
 
   std::string generateOrderByClause(
       const std::vector<SortingKeyAndOrder>& sortingKeysAndOrders);

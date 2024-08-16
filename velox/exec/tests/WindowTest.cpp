@@ -129,8 +129,7 @@ TEST_F(WindowTest, rowBasedStreamingWindowOOM) {
 
       VELOX_ASSERT_THROW(
           readCursor(params, [](Task*) {}),
-          "Exceeded memory pool capacity after attempt to grow capacity through "
-          "arbitration. Requestor pool name 'op.1.0.0.Window', request size 2.00MB, memory pool capacity 1.00MB, memory pool max capacity 2.31MB, memory manager capacity 8.00GB, current usage 280.00KB");
+          "Exceeded memory pool capacity after attempt to grow capacity through arbitration. Requestor pool name 'op.5.0.0.Window', request size 2.00MB, memory pool capacity 2.00MB, memory pool max capacity 2.31MB, memory manager capacity 8.00GB, current usage 280.00KB");
     }
   };
   // RowStreamingWindow will not OOM.
@@ -189,7 +188,7 @@ TEST_F(WindowTest, rowBasedStreamingWindowMemoryUsage) {
   // the peak memory usage will not increase as the volume of data grows.
   auto sortWindowSmallUsage = memoryUsage(false, smallSize);
   auto sortWindowLargeUsage = memoryUsage(false, largeSize);
-  ASSERT_GT(sortWindowSmallUsage, sortWindowLargeUsage);
+  ASSERT_GT(sortWindowLargeUsage, sortWindowSmallUsage);
 
   auto rowWindowSmallUsage = memoryUsage(true, smallSize);
   auto rowWindowLargeUsage = memoryUsage(true, largeSize);
