@@ -157,7 +157,7 @@ std::string WindowFuzzer::generateFrameClause(
   auto endBoundMinIdx = std::max(0, static_cast<int>(startBoundIndex) - 1);
   auto endBoundIndex = boost::random::uniform_int_distribution<uint32_t>(
       endBoundMinIdx, endBoundOptions.size() - 1)(rng_);
-  
+
   isDefaultFrame =
       (startBoundOptions[startBoundIndex] ==
            core::WindowNode::BoundType::kUnboundedPreceding &&
