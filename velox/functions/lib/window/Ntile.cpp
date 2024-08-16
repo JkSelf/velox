@@ -250,7 +250,8 @@ void registerNtile(const std::string& name, const std::string& type) {
           const core::QueryConfig& /*queryConfig*/)
           -> std::unique_ptr<exec::WindowFunction> {
         return std::make_unique<NtileFunction<TResult>>(args, resultType, pool);
-      });
+      },
+      exec::WindowFunction::Metadata::defaultMetadata());
 }
 
 void registerNtileBigint(const std::string& name) {

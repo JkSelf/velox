@@ -31,24 +31,6 @@ struct WindowFunctionArg {
   std::optional<const column_index_t> index;
 };
 
-/// The ProcessedUnit for calculating the window function.
-enum class ProcessedUnit {
-  // Calculation may start only after all rows within a partitions are
-  // available.
-  kPartition,
-  // Calculation may being as soon as rows are available within a single
-  // partition, without waiting for all data in the partition to be ready
-  kRows,
-};
-
-/// Indicates whether the function is for an aggregate used as a window
-/// function. It also specifies whether the ProcessedUnit of Window function is
-/// by partition or by rows.
-struct WindowFunctionMetadata {
-  ProcessedUnit processedUnit;
-  bool isAggregateWindow;
-};
-
 class WindowFunction {
  public:
   explicit WindowFunction(
@@ -60,6 +42,27 @@ class WindowFunction {
         stringAllocator_(stringAllocator) {}
 
   virtual ~WindowFunction() = default;
+
+  /// The data process unit for calculating the window function.
+  enum class ProcessUnit {
+    // Calculation may start only after all rows within a partitions are
+    // available.
+    kPartition,
+    // Calculation may being as soon as rows are available within a single
+    // partition, without waiting for all data in the partition to be ready
+    kRows,
+  };
+
+  // Indicates whether this is an aggregate window function and its process
+  // unit.
+  struct Metadata {
+    ProcessUnit processUnit;
+    bool isAggregateWindow;
+
+    static Metadata defaultMetadata() {
+      return Metadata{ProcessUnit::kPartition, false};
+    }
+  };
 
   // Row number to use in WindowPartition::extractColumn to request a NULL
   // value.
@@ -168,7 +171,7 @@ bool registerWindowFunction(
     const std::string& name,
     std::vector<FunctionSignaturePtr> signatures,
     WindowFunctionFactory factory,
-    WindowFunctionMetadata metadata = {ProcessedUnit::kPartition, false});
+    WindowFunction::Metadata metadata);
 
 /// Returns signatures of the window function with the specified name.
 /// Returns empty std::optional if function with that name is not found.
@@ -178,11 +181,11 @@ std::optional<std::vector<FunctionSignaturePtr>> getWindowFunctionSignatures(
 struct WindowFunctionEntry {
   std::vector<FunctionSignaturePtr> signatures;
   WindowFunctionFactory factory;
-  WindowFunctionMetadata metadata;
+  WindowFunction::Metadata metadata;
 };
 
 /// Returns std::nullopt if the function doesn't exist in the WindowFunctionMap.
-std::optional<WindowFunctionMetadata> getWindowFunctionMetadata(
+std::optional<WindowFunction::Metadata> getWindowFunctionMetadata(
     const std::string& name);
 
 using WindowFunctionMap = std::unordered_map<std::string, WindowFunctionEntry>;

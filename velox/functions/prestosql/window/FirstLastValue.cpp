@@ -184,7 +184,8 @@ void registerFirstLastInternal(const std::string& name) {
           -> std::unique_ptr<exec::WindowFunction> {
         return std::make_unique<FirstLastValueFunction<TValue>>(
             args, resultType, ignoreNulls, pool);
-      });
+      },
+      exec::WindowFunction::Metadata::defaultMetadata());
 }
 
 void registerFirstValue(const std::string& name) {

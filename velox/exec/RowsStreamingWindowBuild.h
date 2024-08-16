@@ -54,26 +54,27 @@ class RowsStreamingWindowBuild : public WindowBuild {
   bool needsInput() override {
     // No partitions are available or the currentPartition is the last available
     // one, so can consume input rows.
-    return windowPartitions_.size() == 0 ||
+    return windowPartitions_.empty() ||
         outputPartition_ == windowPartitions_.size() - 1;
   }
 
  private:
-  void buildNextInputOrPartition(bool isFinished);
+  // Adds input rows to the current partition, or creates a new partition if it does not exist.
+  void addPartitionInputs(bool finished);
 
-  // Holds input rows within the current partition.
+  // Points the input rows in the current partition.
   std::vector<char*> inputRows_;
 
   // Used to compare rows based on partitionKeys.
   char* previousRow_ = nullptr;
 
-  // Current partition being output. Used to return the WidnowPartitions.
+  // Point to the current output partition if not -1.
   vector_size_t outputPartition_ = -1;
 
-  // Current partition when adding input. Used to construct WindowPartitions.
+  // Current input partition that receives inputs.
   vector_size_t inputPartition_ = 0;
 
-  // Holds all the WindowPartitions.
+  // Holds all the built window partitions.
   std::vector<std::shared_ptr<WindowPartition>> windowPartitions_;
 };
 

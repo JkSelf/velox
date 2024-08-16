@@ -272,8 +272,8 @@ void WindowFuzzer::go() {
 
     auto windowFunctionMetadata =
         exec::getWindowFunctionMetadata(signature.name).value();
-    bool supportRowsStreaming =
-        windowFunctionMetadata.processedUnit == ProcessedUnit::kRows &&
+    bool supportRowsStreaming = windowFunctionMetadata.processUnit ==
+            exec::WindowFunction::ProcessUnit::kRows &&
         (!windowFunctionMetadata.isAggregateWindow || isDefaultFrame);
 
     bool failed = verifyWindow(

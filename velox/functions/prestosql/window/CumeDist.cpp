@@ -83,6 +83,7 @@ void registerCumeDist(const std::string& name) {
           const velox::core::QueryConfig& /*queryConfig*/)
           -> std::unique_ptr<exec::WindowFunction> {
         return std::make_unique<CumeDistFunction>();
-      });
+      },
+      exec::WindowFunction::Metadata::defaultMetadata());
 }
 } // namespace facebook::velox::window::prestosql

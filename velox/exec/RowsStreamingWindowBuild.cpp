@@ -26,7 +26,7 @@ RowsStreamingWindowBuild::RowsStreamingWindowBuild(
     tsan_atomic<bool>* nonReclaimableSection)
     : WindowBuild(windowNode, pool, spillConfig, nonReclaimableSection) {}
 
-void RowsStreamingWindowBuild::buildNextInputOrPartition(bool isFinished) {
+void RowsStreamingWindowBuild::addPartitionInputs(bool finished) {
   if (windowPartitions_.size() <= inputPartition_) {
     windowPartitions_.push_back(std::make_shared<WindowPartition>(
         data_.get(), inversedInputChannels_, sortKeyInfo_));
@@ -34,7 +34,7 @@ void RowsStreamingWindowBuild::buildNextInputOrPartition(bool isFinished) {
 
   windowPartitions_[inputPartition_]->addRows(inputRows_);
 
-  if (isFinished) {
+  if (finished) {
     windowPartitions_[inputPartition_]->setComplete();
     inputPartition_++;
   }
@@ -56,11 +56,11 @@ void RowsStreamingWindowBuild::addInput(RowVectorPtr input) {
 
     if (previousRow_ != nullptr &&
         compareRowsWithKeys(previousRow_, newRow, partitionKeyInfo_)) {
-      buildNextInputOrPartition(true);
+      addPartitionInputs(true);
     }
 
     if (previousRow_ != nullptr && inputRows_.size() >= numRowsPerOutput_) {
-      buildNextInputOrPartition(false);
+      addPartitionInputs(false);
     }
 
     inputRows_.push_back(newRow);
@@ -69,17 +69,16 @@ void RowsStreamingWindowBuild::addInput(RowVectorPtr input) {
 }
 
 void RowsStreamingWindowBuild::noMoreInput() {
-  buildNextInputOrPartition(true);
+  addPartitionInputs(true);
 }
 
 std::shared_ptr<WindowPartition> RowsStreamingWindowBuild::nextPartition() {
-  // The previous partition has already been set to nullptr by the
-  // Window.cpp#callResetPartition() method.
+  VELOX_CHECK_LE(outputPartition_, int(windowPartitions_.size() - 2));
   return windowPartitions_[++outputPartition_];
 }
 
 bool RowsStreamingWindowBuild::hasNextPartition() {
-  return windowPartitions_.size() > 0 &&
+  return !windowPartitions_.empty() &&
       outputPartition_ <= int(windowPartitions_.size() - 2);
 }
 

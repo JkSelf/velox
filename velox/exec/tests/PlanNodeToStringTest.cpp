@@ -729,7 +729,7 @@ TEST_F(PlanNodeToStringTest, window) {
           .returnType("BIGINT")
           .build(),
   };
-  exec::registerWindowFunction("window1", std::move(signatures), nullptr);
+  exec::registerWindowFunction("window1", std::move(signatures), nullptr, exec::WindowFunction::Metadata::defaultMetadata());
 
   auto plan =
       PlanBuilder()

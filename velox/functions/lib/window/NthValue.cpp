@@ -329,7 +329,8 @@ void registerNthValue(const std::string& name, TypeKind offsetTypeKind) {
           -> std::unique_ptr<exec::WindowFunction> {
         return std::make_unique<NthValueFunction>(
             args, resultType, ignoreNulls, pool);
-      });
+      },
+      exec::WindowFunction::Metadata::defaultMetadata());
 }
 
 void registerNthValueInteger(const std::string& name) {

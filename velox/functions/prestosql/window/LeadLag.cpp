@@ -434,7 +434,8 @@ void registerLag(const std::string& name) {
           -> std::unique_ptr<exec::WindowFunction> {
         return std::make_unique<LeadLagFunction<true>>(
             args, resultType, ignoreNulls, pool);
-      });
+      },
+      exec::WindowFunction::Metadata::defaultMetadata());
 }
 
 void registerLead(const std::string& name) {
@@ -451,6 +452,7 @@ void registerLead(const std::string& name) {
           -> std::unique_ptr<exec::WindowFunction> {
         return std::make_unique<LeadLagFunction<false>>(
             args, resultType, ignoreNulls, pool);
-      });
+      },
+      exec::WindowFunction::Metadata::defaultMetadata());
 }
 } // namespace facebook::velox::window::prestosql

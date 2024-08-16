@@ -49,23 +49,28 @@ WindowPartition::WindowPartition(
 }
 
 void WindowPartition::addRows(const std::vector<char*>& rows) {
+  VELOX_CHECK(partial_, "Current WindowPartition should be partial.");
   rows_.insert(rows_.end(), rows.begin(), rows.end());
   partition_ = folly::Range(rows_.data(), rows_.size());
 }
 
-void WindowPartition::clearOutputRows(vector_size_t numRows) {
+void WindowPartition::eraseRows(vector_size_t numRows) {
+  data_->eraseRows(folly::Range<char**>(rows_.data(), numRows));
+  rows_.erase(rows_.begin(), rows_.begin() + numRows);
+  partition_ = folly::Range(rows_.data(), rows_.size());
+}
+
+void WindowPartition::removeProcessedRows(vector_size_t numRows) {
   VELOX_CHECK(partial_, "Current WindowPartition should be partial.");
   if (!complete_ || (complete_ && rows_.size() >= numRows)) {
     if (complete_ && rows_.size() == 1 && numRows == 1) {
-      // Directly delete the last row if only one row in current partition.
-      data_->eraseRows(folly::Range<char**>(rows_.data(), numRows));
-      rows_.erase(rows_.begin(), rows_.begin() + numRows);
+      // If the current partition only has one row, 
+      // we need to delete it here. Otherwise, it will not be deleted in the computePeerBuffers method (start == 0 not > 0),
+      // potentially still causing OOM 
+      eraseRows(numRows);
     } else {
-      data_->eraseRows(folly::Range<char**>(rows_.data(), numRows - 1));
-      rows_.erase(rows_.begin(), rows_.begin() + numRows - 1);
+      eraseRows(numRows - 1);
     }
-
-    partition_ = folly::Range(rows_.data(), rows_.size());
     startRow_ += numRows;
   }
 }
@@ -89,8 +94,9 @@ void WindowPartition::extractColumn(
     vector_size_t numRows,
     vector_size_t resultOffset,
     const VectorPtr& result) const {
+  VELOX_CHECK_GE(partitionOffset, startRowOffset());
   RowContainer::extractColumn(
-      partition_.data() + partitionOffset - startRow(),
+      partition_.data() + partitionOffset - startRowOffset(),
       numRows,
       columns_[columnIndex],
       resultOffset,
@@ -169,18 +175,18 @@ bool WindowPartition::compareRowsWithSortKeys(const char* lhs, const char* rhs)
   return false;
 }
 
-vector_size_t WindowPartition::findPeerGroupEndIndex(
+vector_size_t WindowPartition::findPeerRowEndIndex(
     vector_size_t currentStart,
     vector_size_t lastPartitionRow,
-    std::function<bool(const char*, const char*)> peerCompare) {
+    const std::function<bool(const char*, const char*)> peerCompare) {
   auto peerEnd = currentStart;
   while (peerEnd <= lastPartitionRow) {
     if (peerCompare(
-            partition_[currentStart - startRow()],
-            partition_[peerEnd - startRow()])) {
+            partition_[currentStart - startRowOffset()],
+            partition_[peerEnd - startRowOffset()])) {
       break;
     }
-    peerEnd++;
+    ++peerEnd;
   }
   return peerEnd;
 }
@@ -196,9 +202,9 @@ std::pair<vector_size_t, vector_size_t> WindowPartition::computePeerBuffers(
     return compareRowsWithSortKeys(lhs, rhs);
   };
 
-  VELOX_CHECK_LE(end, numRows() + startRow());
+  VELOX_CHECK_LE(end, numRows() + startRowOffset());
 
-  auto lastPartitionRow = numRows() + startRow() - 1;
+  auto lastPartitionRow = numRows() + startRowOffset() - 1;
   auto peerStart = prevPeerStart;
   auto peerEnd = prevPeerEnd;
 
@@ -206,20 +212,18 @@ std::pair<vector_size_t, vector_size_t> WindowPartition::computePeerBuffers(
 
   if (partial_ && start > 0) {
     lastPartitionRow = end - 1;
-    auto peerGroup = peerCompare(partition_[0], partition_[1]);
+    const auto peerGroup = peerCompare(partition_[0], partition_[1]);
 
     // The first row is the last row in previous batch. So Delete it after
     // compare.
-    data_->eraseRows(folly::Range<char**>(rows_.data(), 1));
-    rows_.erase(rows_.begin(), rows_.begin() + 1);
-    partition_ = folly::Range(rows_.data(), rows_.size());
+    eraseRows(1);
 
     if (!peerGroup) {
-      peerEnd = findPeerGroupEndIndex(start, lastPartitionRow, peerCompare);
+      peerEnd = findPeerRowEndIndex(start, lastPartitionRow, peerCompare);
 
-      for (auto j = 0; j < (peerEnd - start); j++) {
-        rawPeerStarts[j] = peerStart;
-        rawPeerEnds[j] = peerEnd - 1;
+      for (auto i = 0; i < (peerEnd - start); i++) {
+        rawPeerStarts[i] = peerStart;
+        rawPeerEnds[i] = peerEnd - 1;
       }
 
       nextStart = peerEnd;
@@ -240,7 +244,7 @@ std::pair<vector_size_t, vector_size_t> WindowPartition::computePeerBuffers(
       // Compute peerStart and peerEnd rows for the first row of the partition
       // or when past the previous peerGroup.
       peerStart = i;
-      peerEnd = findPeerGroupEndIndex(peerStart, lastPartitionRow, peerCompare);
+      peerEnd = findPeerRowEndIndex(peerStart, lastPartitionRow, peerCompare);
     }
 
     rawPeerStarts[j] = peerStart;
