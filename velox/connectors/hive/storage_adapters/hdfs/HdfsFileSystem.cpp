@@ -20,7 +20,6 @@
 #include "velox/connectors/hive/storage_adapters/hdfs/HdfsReadFile.h"
 #include "velox/connectors/hive/storage_adapters/hdfs/HdfsWriteFile.h"
 #include "velox/connectors/hive/storage_adapters/hdfs/hdfs_internal.h"
-#include "velox/core/Config.h"
 
 namespace facebook::velox::filesystems {
 std::string_view HdfsFileSystem::kScheme("hdfs://");
