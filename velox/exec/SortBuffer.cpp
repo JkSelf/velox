@@ -99,6 +99,9 @@ void SortBuffer::addInput(const VectorPtr& input) {
 }
 
 void SortBuffer::noMoreInput() {
+    velox::common::testutil::TestValue::adjust(
+      "facebook::velox::exec::SortBuffer::noMoreInput",
+      this);
   VELOX_CHECK(!noMoreInput_);
   noMoreInput_ = true;
 
@@ -129,6 +132,8 @@ void SortBuffer::noMoreInput() {
 
   // Releases the unused memory reservation after procesing input.
   pool_->release();
+  
+  ensureOutputFits();
 }
 
 RowVectorPtr SortBuffer::getOutput(vector_size_t maxOutputRows) {
@@ -227,6 +232,33 @@ void SortBuffer::ensureInputFits(const VectorPtr& input) {
                << " for memory pool " << pool()->name()
                << ", usage: " << succinctBytes(pool()->usedBytes())
                << ", reservation: " << succinctBytes(pool()->reservedBytes());
+}
+
+void SortBuffer::ensureOutputFits() {
+  // Check if spilling is enabled or not.
+  if (spillConfig_ == nullptr) {
+    return;
+  }
+
+  // Test-only spill path.
+  if (testingTriggerSpill(pool_->name())) {
+    spill();
+    return;
+  }
+
+  const uint64_t outputBufferSizeToReserve =
+      estimatedOutputRowSize_.value() * 1.2;
+  {
+    memory::ReclaimableSectionGuard guard(nonReclaimableSection_);
+    if (pool_->maybeReserve(outputBufferSizeToReserve)) {
+      return;
+    }
+  }
+  LOG(WARNING) << "Failed to reserve "
+               << succinctBytes(outputBufferSizeToReserve)
+               << " for memory pool " << pool_->name()
+               << ", usage: " << succinctBytes(pool_->usedBytes())
+               << ", reservation: " << succinctBytes(pool_->reservedBytes());
 }
 
 void SortBuffer::updateEstimatedOutputRowSize() {
