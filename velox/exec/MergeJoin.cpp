@@ -586,7 +586,7 @@ bool MergeJoin::addToOutputForLeftJoin() {
                   (kk - leftStart) * (rightEnd - rightStart) + j - rightStart;
               indexs.push_back(rowIndex);
             }
-            hashMap[++index] = indexs;
+            hashMap[j] = indexs;
           }
           flag = false;
         }
@@ -611,7 +611,7 @@ bool MergeJoin::addToOutputForLeftJoin() {
       }
     }
 
-    if (isFullJoin(joinType_) && filter_ && matchedNumRows > 1) {
+    if (isFullJoin(joinType_) && filter_) {
       SelectivityVector matchingRows{outputSize_, false};
       matchingRows.setValidRange(
           (outputSize_ - matchedNumRows), outputSize_, true);
@@ -637,8 +637,7 @@ bool MergeJoin::addToOutputForLeftJoin() {
           if (!isRightFlattened_) {
             rawRightIndices_[outputSize_] = index;
           } else {
-            copyRow(rightInput_, index, output_, outputSize_, rightProjections_);
-            // output_->copy(output_.get(), outputSize_, index, 1);
+            copyRow(rightInput_, pair.first, output_, outputSize_, rightProjections_);
           }
 
           for (const auto& projection : leftProjections_) {
