@@ -17,6 +17,7 @@
 #include "velox/exec/OperatorUtils.h"
 #include "velox/exec/Task.h"
 #include "velox/expression/FieldReference.h"
+#include <iostream>
 
 namespace facebook::velox::exec {
 
@@ -536,6 +537,12 @@ bool MergeJoin::addToOutputForLeftJoin() {
     auto firstRightBatch = 0;
     auto rightStartIndex = 0;
     auto numRights = 0;
+
+    auto matchedNumRows = 0;
+    std::unordered_map<int32_t, std::vector<int32_t>> hashMap;
+    std::unordered_map<int32_t, std::vector<int32_t>> ringthInputMap;
+    int index = 0;
+    auto flag = true;
     for (auto i = leftStart; i < leftEnd; ++i) {
       firstRightBatch =
           (l == firstLeftBatch && i == leftStart && rightMatch_->cursor)
@@ -570,6 +577,20 @@ bool MergeJoin::addToOutputForLeftJoin() {
           rightEnd = rightStart + 1;
         }
 
+        if (flag) {
+          for (auto j = rightStart; j < rightEnd; ++j) {
+            std::vector<int32_t> indexs;
+            indexs.reserve((leftEnd - leftStart));
+            for (auto kk = leftStart; kk < leftEnd; ++kk) {
+              auto rowIndex =
+                  (kk - leftStart) * (rightEnd - rightStart) + j - rightStart;
+              indexs.push_back(rowIndex);
+            }
+            hashMap[++index] = indexs;
+          }
+          flag = false;
+        }
+
         for (auto j = rightStart; j < rightEnd; ++j) {
           if (outputSize_ == outputBatchSize_) {
             // If we run out of space in the current output_, we will need to
@@ -581,51 +602,53 @@ bool MergeJoin::addToOutputForLeftJoin() {
             rightMatch_->setCursor(r, j);
             return true;
           }
-
+          std::cout << "before copy is " << output_->toString(0, outputSize_) << "\n";
           addOutputRow(left, i, right, j);
+          std::cout << "after copy is " << output_->toString(0, outputSize_) << "\n";
+          
+          ++matchedNumRows;
         }
       }
     }
 
-    if (isFullJoin(joinType_) && filter_) {
-      auto numRows = (leftEnd - leftStart) * (rightEnd - rightStart);
+    if (isFullJoin(joinType_) && filter_ && matchedNumRows > 1) {
       SelectivityVector matchingRows{outputSize_, false};
-      matchingRows.setValidRange((outputSize_ - numRows), outputSize_, true);
+      matchingRows.setValidRange(
+          (outputSize_ - matchedNumRows), outputSize_, true);
       matchingRows.updateBounds();
 
       evaluateFilter(matchingRows);
 
-      auto processedRowNums = (outputSize_ - numRows);
-      for (size_t r = firstRightBatch; r < numRights; ++r) {
-        auto right = rightMatch_->inputs[r];
-        for (auto i = rightStart; i < rightEnd; ++i) {
-          bool rightMatched = false;
-          for (auto j = leftStart; j < leftEnd; ++j) {
-            auto rowIndex = processedRowNums +
-                (j - leftStart) * (rightEnd - rightStart) + i - rightStart;
-            const bool passed = !decodedFilterResult_.isNullAt(rowIndex) &&
-                decodedFilterResult_.valueAt<bool>(rowIndex);
-            if (passed) {
-              rightMatched = passed;
-            }
+      auto processedRowNums = (outputSize_ - matchedNumRows);
+
+      for (const auto& pair : hashMap) {
+        bool rightMatched = false;
+        auto index = 0;
+        for (auto rowIndex : pair.second) {
+          index = processedRowNums + rowIndex;
+          const bool passed = !decodedFilterResult_.isNullAt(index) &&
+              decodedFilterResult_.valueAt<bool>(index);
+          if (passed) {
+            rightMatched = true;
+          }
+        }
+
+        if (!rightMatched) {
+          if (!isRightFlattened_) {
+            rawRightIndices_[outputSize_] = index;
+          } else {
+            copyRow(rightInput_, index, output_, outputSize_, rightProjections_);
+            // output_->copy(output_.get(), outputSize_, index, 1);
           }
 
-          if (!rightMatched) {
-            if (!isRightFlattened_) {
-              rawRightIndices_[outputSize_] = i;
-            } else {
-              copyRow(right, i, output_, outputSize_, rightProjections_);
-            }
-
-            for (const auto& projection : leftProjections_) {
-              const auto& target = output_->childAt(projection.outputChannel);
-              target->setNull(outputSize_, true);
-            }
-
-            joinTracker_->addMiss(outputSize_);
-
-            ++outputSize_;
+          for (const auto& projection : leftProjections_) {
+            const auto& target = output_->childAt(projection.outputChannel);
+            target->setNull(outputSize_, true);
           }
+
+          joinTracker_->addMiss(outputSize_);
+
+          ++outputSize_;
         }
       }
     }
@@ -787,6 +810,7 @@ RowVectorPtr MergeJoin::getOutput() {
           for (const auto [channel, _] : filterInputToOutputChannel_) {
             filterInput_->childAt(channel).reset();
           }
+          std::cout << "the output is " << output->toString(0, output->size()) << "\n";
           return output;
         }
 
@@ -801,6 +825,7 @@ RowVectorPtr MergeJoin::getOutput() {
         // No rows survived the filter for anti join. Get more rows.
         continue;
       } else {
+        std::cout << "the output is " << output->toString(0, output->size()) << "\n";
         return output;
       }
     }
@@ -1175,6 +1200,7 @@ RowVectorPtr MergeJoin::doGetOutput() {
 }
 
 RowVectorPtr MergeJoin::applyFilter(const RowVectorPtr& output) {
+  std::cout << "before apply filter the output is " << output->toString(0, output->size()) << "\n";
   const auto numRows = output->size();
 
   BufferPtr indices = allocateIndices(numRows, pool());
