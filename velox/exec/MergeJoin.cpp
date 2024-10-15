@@ -89,7 +89,9 @@ void MergeJoin::initialize() {
     initializeFilter(joinNode_->filter(), leftType, rightType);
 
     if (joinNode_->isLeftJoin() || joinNode_->isAntiJoin() ||
-        joinNode_->isRightJoin() || joinNode_->isFullJoin()) {
+        joinNode_->isRightJoin() || joinNode_->isFullJoin() ||
+        joinNode_->isLeftSemiFilterJoin() ||
+        joinNode_->isRightSemiFilterJoin()) {
       joinTracker_ = JoinTracker(outputBatchSize_, pool());
     }
   } else if (joinNode_->isAntiJoin()) {
@@ -543,6 +545,12 @@ bool MergeJoin::addToOutputForLeftJoin() {
           : rightMatch_->startIndex;
 
       auto numRights = rightMatch_->inputs.size();
+
+      if (isLeftSemiFilterJoin(joinType_) && !filter_) {
+        // LeftSemiFilter produce each row from the left at most once.
+        numRights = 1;
+      }
+
       for (size_t r = firstRightBatch; r < numRights; ++r) {
         auto right = rightMatch_->inputs[r];
         auto rightStart = r == firstRightBatch ? rightStartIndex : 0;
@@ -560,7 +568,7 @@ bool MergeJoin::addToOutputForLeftJoin() {
         // one match on the other side, we could explore specialized algorithms
         // or data structures that short-circuit the join process once a match
         // is found.
-        if (isLeftSemiFilterJoin(joinType_)) {
+        if (isLeftSemiFilterJoin(joinType_) && !filter_) {
           // LeftSemiFilter produce each row from the left at most once.
           rightEnd = rightStart + 1;
         }
@@ -577,6 +585,35 @@ bool MergeJoin::addToOutputForLeftJoin() {
             return true;
           }
           addOutputRow(left, i, right, j);
+        }
+
+        if (isLeftSemiFilterJoin(joinType_) && filter_) {
+          auto numRows = (rightEnd - rightStart);
+          SelectivityVector matchingRows{outputSize_, false};
+          matchingRows.setValidRange(
+              (outputSize_ - numRows), outputSize_, true);
+          matchingRows.updateBounds();
+
+          evaluateFilter(matchingRows);
+
+          auto processedRowNums = (outputSize_ - numRows);
+
+          auto firstMatchedRow = false;
+          for (auto j = rightStart; j < rightEnd; ++j) {
+            auto rowIndex = processedRowNums + j - rightStart;
+            const bool passed = !decodedFilterResult_.isNullAt(rowIndex) &&
+                decodedFilterResult_.valueAt<bool>(rowIndex);
+            if (passed) {
+              if (!firstMatchedRow) {
+                firstMatchedRow = true;
+              } else {
+                joinTracker_->addMiss(rowIndex);
+              }
+            }
+          }
+          if (firstMatchedRow) {
+            break;
+          }
         }
       }
     }
@@ -622,6 +659,12 @@ bool MergeJoin::addToOutputForRightJoin() {
           : leftMatch_->startIndex;
 
       auto numLefts = leftMatch_->inputs.size();
+
+      if (isRightSemiFilterJoin(joinType_) && !filter_) {
+        // RightSemiFilter produce each row from the left at most once.
+        numRights = 1;
+      }
+
       for (size_t l = firstLeftBatch; l < numLefts; ++l) {
         auto left = leftMatch_->inputs[l];
         auto leftStart = l == firstLeftBatch ? leftStartIndex : 0;
@@ -638,7 +681,7 @@ bool MergeJoin::addToOutputForRightJoin() {
         // one match on the other side, we could explore specialized algorithms
         // or data structures that short-circuit the join process once a match
         // is found.
-        if (isRightSemiFilterJoin(joinType_)) {
+        if (isRightSemiFilterJoin(joinType_) && !filter_) {
           // RightSemiFilter produce each row from the right at most once.
           leftEnd = leftStart + 1;
         }
@@ -655,6 +698,35 @@ bool MergeJoin::addToOutputForRightJoin() {
             return true;
           }
           addOutputRow(left, j, right, i);
+        }
+
+        if (isRightSemiFilterJoin(joinType_) && filter_) {
+          auto numRows = (leftEnd - leftStart);
+          SelectivityVector matchingRows{outputSize_, false};
+          matchingRows.setValidRange(
+              (outputSize_ - numRows), outputSize_, true);
+          matchingRows.updateBounds();
+
+          evaluateFilter(matchingRows);
+
+          auto processedRowNums = (outputSize_ - numRows);
+
+          auto firstMatchedRow = false;
+          for (auto j = leftStart; j < leftEnd; ++j) {
+            auto rowIndex = processedRowNums + j - leftStart;
+            const bool passed = !decodedFilterResult_.isNullAt(rowIndex) &&
+                decodedFilterResult_.valueAt<bool>(rowIndex);
+            if (passed) {
+              if (!firstMatchedRow) {
+                firstMatchedRow = true;
+              } else {
+                joinTracker_->addMiss(rowIndex);
+              }
+            }
+          }
+          if (firstMatchedRow) {
+            break;
+          }
         }
       }
     }
@@ -1147,7 +1219,8 @@ RowVectorPtr MergeJoin::applyFilter(const RowVectorPtr& output) {
     // If all matches for a given left-side row fail the filter, add a row to
     // the output with nulls for the right-side columns.
     auto onMiss = [&](auto row) {
-      if (!isAntiJoin(joinType_)) {
+      if (!isAntiJoin(joinType_) && !isRightSemiFilterJoin(joinType_) &&
+          !isLeftSemiFilterJoin(joinType_)) {
         rawIndices[numPassed++] = row;
 
         if (isFullJoin(joinType_)) {
@@ -1235,9 +1308,12 @@ RowVectorPtr MergeJoin::applyFilter(const RowVectorPtr& output) {
           }
         }
       } else {
-        // This row doesn't have a match on the right side. Keep it
-        // unconditionally.
-        rawIndices[numPassed++] = i;
+        if (!isLeftSemiFilterJoin(joinType_) &&
+            !isRightSemiFilterJoin(joinType_)) {
+          // This row doesn't have a match on the right side. Keep it
+          // unconditionally.
+          rawIndices[numPassed++] = i;
+        }
       }
     }
 
