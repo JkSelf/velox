@@ -217,6 +217,10 @@ class MergeJoin : public Operator {
   // logic is more involved.
   void flattenRightProjections();
 
+  bool advanceFilterLeftSemiOutput(
+      vector_size_t rightStart,
+      vector_size_t rightEnd);
+
   /// Adds one row of output for a left-side row with no right-side match.
   /// Copies values from the 'leftIndex' row of 'left' and fills in nulls
   /// for columns that correspond to the right side.

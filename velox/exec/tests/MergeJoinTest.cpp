@@ -756,6 +756,51 @@ TEST_F(MergeJoinTest, semiJoin) {
       core::JoinType::kRightSemiFilter);
 }
 
+TEST_F(MergeJoinTest, leftSemiJoin) {
+  auto left = makeRowVector(
+      {"t0", "t1"},
+      {makeNullableFlatVector<std::string>({"val1b", "val1b", "val1b"}),
+       makeNullableFlatVector<int64_t>({12, 12, 12})});
+
+  auto right = makeRowVector(
+      {"u0", "u1"},
+      {makeNullableFlatVector<std::string>({"val1b", "val1b", "val1b"}),
+       makeNullableFlatVector<int64_t>({12, 16, 16})});
+
+  createDuckDbTable("t", {left});
+  createDuckDbTable("u", {right});
+
+  auto testSemiJoin = [&](const std::string& filter,
+                          const std::string& sql,
+                          const std::vector<std::string>& outputLayout,
+                          core::JoinType joinType) {
+    auto planNodeIdGenerator = std::make_shared<core::PlanNodeIdGenerator>();
+    auto plan =
+        PlanBuilder(planNodeIdGenerator)
+            .values({left})
+            .mergeJoin(
+                {"t0"},
+                {"u0"},
+                PlanBuilder(planNodeIdGenerator).values({right}).planNode(),
+                filter,
+                outputLayout,
+                joinType)
+            .planNode();
+    AssertQueryBuilder(plan, duckDbQueryRunner_).assertResults(sql);
+  };
+
+  testSemiJoin(
+      "t1 < u1",
+      "SELECT t0, t1 FROM t where t0 IN (SELECT u0 from u where t1 < u1)",
+      {"t0", "t1"},
+      core::JoinType::kLeftSemiFilter);
+  testSemiJoin(
+      "t1 < u1",
+      "SELECT u0, u1 FROM u where u0 IN (SELECT t0 from t where t1 < u1)",
+      {"u0", "u1"},
+      core::JoinType::kRightSemiFilter);
+}
+
 TEST_F(MergeJoinTest, rightJoin) {
   auto left = makeRowVector(
       {"t0"},
