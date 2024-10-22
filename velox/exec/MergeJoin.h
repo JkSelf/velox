@@ -281,6 +281,10 @@ class MergeJoin : public Operator {
         : matchingRows_{numRows, false} {
       leftRowNumbers_ = AlignedBuffer::allocate<vector_size_t>(numRows, pool);
       rawLeftRowNumbers_ = leftRowNumbers_->asMutable<vector_size_t>();
+
+      leftMultiMatchedRows_ =
+          AlignedBuffer::allocate<vector_size_t>(numRows, pool);
+      rawleftMultiMatchedRows_ = leftMultiMatchedRows_->asMutable<bool>();
     }
 
     /// Records a row of output that corresponds to a match between a left-side
@@ -316,9 +320,10 @@ class MergeJoin : public Operator {
     /// row that has no match on the right-side. The caller must call addMatch
     /// or addMiss method for each row of output in order, starting with the
     /// first row.
-    void addMiss(vector_size_t outputIndex) {
+    void addMiss(vector_size_t outputIndex, bool multiMatched = false) {
       matchingRows_.setValid(outputIndex, false);
       resetLastVector();
+      rawleftMultiMatchedRows_[outputIndex] = multiMatched;
     }
 
     /// Clear the left-side vector and index of the last added output row. The
@@ -363,6 +368,10 @@ class MergeJoin : public Operator {
       return currentLeftRowNumber_ == rawLeftRowNumbers_[row];
     }
 
+    bool multiMatchedRows(vector_size_t rowIndex) {
+      return rawleftMultiMatchedRows_[rowIndex];
+    }
+
     /// Called when all rows from the current output batch are processed and the
     /// next batch of output will start with a new left-side row or there will
     /// be no more batches. Calls 'onMiss' for the last left-side row if the
@@ -395,6 +404,9 @@ class MergeJoin : public Operator {
     // not defined.
     BufferPtr leftRowNumbers_;
     vector_size_t* rawLeftRowNumbers_;
+
+    BufferPtr leftMultiMatchedRows_;
+    bool* rawleftMultiMatchedRows_;
 
     // Synthetic number assigned to the last added "match" row or zero if no row
     // has been added yet.

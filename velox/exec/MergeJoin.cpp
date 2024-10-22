@@ -14,7 +14,6 @@
  * limitations under the License.
  */
 #include "velox/exec/MergeJoin.h"
-#include <iostream>
 #include "velox/exec/OperatorUtils.h"
 #include "velox/exec/Task.h"
 #include "velox/expression/FieldReference.h"
@@ -643,6 +642,37 @@ bool MergeJoin::addToOutputForLeftJoin() {
             break;
           }
         }
+
+        if (isAntiJoin(joinType_) && filter_) {
+          auto numRows = (rightEnd - rightStart);
+          SelectivityVector matchingRows{outputSize_, false};
+          matchingRows.setValidRange(
+              (outputSize_ - numRows), outputSize_, true);
+          matchingRows.updateBounds();
+
+          evaluateFilter(matchingRows);
+
+          auto processedRowNums = (outputSize_ - numRows);
+
+          auto matchedRow = false;
+          for (auto j = rightStart; j < rightEnd; ++j) {
+            auto rowIndex = processedRowNums + j - rightStart;
+            const bool passed = !decodedFilterResult_.isNullAt(rowIndex) &&
+                decodedFilterResult_.valueAt<bool>(rowIndex);
+            if (passed) {
+              matchedRow = true;
+            }
+          }
+
+          if (matchedRow) {
+            for (auto j = rightStart; j < rightEnd; ++j) {
+              auto rowIndex = processedRowNums + j - rightStart;
+              const bool passed = !decodedFilterResult_.isNullAt(rowIndex) &&
+                  decodedFilterResult_.valueAt<bool>(rowIndex);
+              joinTracker_->addMiss(rowIndex, true);
+            }
+          }
+        }
       }
     }
   }
@@ -838,8 +868,6 @@ RowVectorPtr MergeJoin::getOutput() {
           for (const auto [channel, _] : filterInputToOutputChannel_) {
             filterInput_->childAt(channel).reset();
           }
-          std::cout << "the output is " << output->toString(0, output->size())
-                    << "\n";
           return output;
         }
 
@@ -854,8 +882,8 @@ RowVectorPtr MergeJoin::getOutput() {
         // No rows survived the filter for anti join. Get more rows.
         continue;
       } else {
-        std::cout << "the output is " << output->toString(0, output->size())
-                  << "\n";
+        // std::cout << "the output is " << output->toString(0, output->size())
+        //           << "\n";
         return output;
       }
     }
@@ -900,8 +928,6 @@ RowVectorPtr MergeJoin::getOutput() {
       continue;
     }
 
-    std::cout << "begin return nullptr for smj output"
-              << "\n";
     return nullptr;
   }
 }
@@ -1344,6 +1370,9 @@ RowVectorPtr MergeJoin::applyFilter(const RowVectorPtr& output) {
           }
         }
       } else {
+        if (isAntiJoin(joinType_) && joinTracker_->multiMatchedRows(i)) {
+          continue;
+        }
         if (!isLeftSemiFilterJoin(joinType_) &&
             !isRightSemiFilterJoin(joinType_)) {
           // This row doesn't have a match on the right side. Keep it
