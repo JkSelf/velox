@@ -514,5 +514,7 @@ class MergeJoin : public Operator {
 
   // True if all the right side data has been received.
   bool noMoreRightInput_{false};
+
+  bool matchedRow_{false};
 };
 } // namespace facebook::velox::exec

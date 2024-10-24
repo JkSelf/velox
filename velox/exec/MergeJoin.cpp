@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 #include "velox/exec/MergeJoin.h"
+#include <iostream>
 #include "velox/exec/OperatorUtils.h"
 #include "velox/exec/Task.h"
 #include "velox/expression/FieldReference.h"
@@ -377,7 +378,7 @@ void MergeJoin::addOutputRow(
 
   // Anti join needs to track the left side rows that have no match on the
   // right.
-  if (isAntiJoin(joinType_)) {
+  if (isAntiJoin(joinType_) && !filter_) {
     VELOX_CHECK(joinTracker_);
     // Record left-side row with a match on the right-side.
     joinTracker_->addMatch(left, leftIndex, outputSize_);
@@ -584,6 +585,8 @@ bool MergeJoin::addToOutputForLeftJoin() {
         numRights = 1;
       }
 
+      vector_size_t matchedNumRows = 0;
+      std::vector<int32_t> offsets;
       for (size_t r = firstRightBatch; r < numRights; ++r) {
         auto right = rightMatch_->inputs[r];
         auto rightStart = r == firstRightBatch ? rightStartIndex : 0;
@@ -606,6 +609,29 @@ bool MergeJoin::addToOutputForLeftJoin() {
           rightEnd = rightStart + 1;
         }
 
+        if (input_ &&
+            input_->childAt(0)->asFlatVector<int64_t>()->valueAt(index_) ==
+                2499780) {
+          // std::cout << "the failed index_" << "\n";
+          // std::cout << "the left is " << left->toString(0, left->size()) <<
+          // "\n";
+          // std::cout << "the right is " << right->toString(0,
+          // right->size()) << "\n";
+        }
+
+        if (isAntiJoin(joinType_) && filter_ && (outputSize_ + (rightEnd - rightStart) > outputBatchSize_)) {
+          // If we run out of space in the current output_, we will need to
+          // produce a buffer and continue processing left later. In this case,
+          // we cannot leave left as a lazy vector, since we cannot have two
+          // dictionaries wrapping the same lazy vector.
+          output_->resize(outputSize_);
+          loadColumns(currentLeft_, *operatorCtx_->execCtx());
+         
+          leftMatch_->setCursor(l, i);
+          rightMatch_->setCursor(r, rightStart);
+          return true;
+        }
+
         for (auto j = rightStart; j < rightEnd; ++j) {
           if (outputSize_ == outputBatchSize_) {
             if (isLeftSemiFilterJoin(joinType_) && filter_) {
@@ -623,6 +649,7 @@ bool MergeJoin::addToOutputForLeftJoin() {
                 }
               }
             }
+
             // If we run out of space in the current output_, we will need to
             // produce a buffer and continue processing left later. In this
             // case, we cannot leave left as a lazy vector, since we cannot have
@@ -632,7 +659,23 @@ bool MergeJoin::addToOutputForLeftJoin() {
             rightMatch_->setCursor(r, j);
             return true;
           }
+          // if (input_ &&
+          //   input_->childAt(0)->asFlatVector<int64_t>()->valueAt(i) ==
+          //       1528291) {
+          //   std::cout << "before the outputSize_ is " << outputSize_ << "\n";
+          //   std::cout << "before the 1496551 output is " << output_->toString(outputSize_ - 1, outputSize_) << "\n";
+          // }
           addOutputRow(left, i, right, j);
+          // std::cout << "the added output is " << output_->toString(outputSize_ - 1, outputSize_) << "\n";
+          // if (input_ &&
+          //   input_->childAt(0)->asFlatVector<int64_t>()->valueAt(i) ==
+          //       1528291) {
+          //   std::cout << "the outputSize_ is " << outputSize_ << "\n";
+          //   std::cout << "the 1496551 output is " << output_->toString(outputSize_ - 1, outputSize_) << "\n";
+          // }
+
+          offsets.emplace_back(matchedNumRows);
+          ++matchedNumRows;
         }
 
         if (isLeftSemiFilterJoin(joinType_) && filter_) {
@@ -642,38 +685,42 @@ bool MergeJoin::addToOutputForLeftJoin() {
             break;
           }
         }
+      }
 
-        if (isAntiJoin(joinType_) && filter_) {
-          auto numRows = (rightEnd - rightStart);
-          SelectivityVector matchingRows{outputSize_, false};
-          matchingRows.setValidRange(
-              (outputSize_ - numRows), outputSize_, true);
-          matchingRows.updateBounds();
+      if (isAntiJoin(joinType_) && filter_) {
+        SelectivityVector matchingRows{outputSize_, false};
+        matchingRows.setValidRange(
+            (outputSize_ - matchedNumRows), outputSize_, true);
+        matchingRows.updateBounds();
 
-          evaluateFilter(matchingRows);
+        evaluateFilter(matchingRows);
 
-          auto processedRowNums = (outputSize_ - numRows);
+        auto processedRowNums = (outputSize_ - matchedNumRows);
 
-          auto matchedRow = false;
-          for (auto j = rightStart; j < rightEnd; ++j) {
-            auto rowIndex = processedRowNums + j - rightStart;
-            const bool passed = !decodedFilterResult_.isNullAt(rowIndex) &&
-                decodedFilterResult_.valueAt<bool>(rowIndex);
-            if (passed) {
-              matchedRow = true;
-            }
+        auto matchedRow = false;
+        for (auto offset : offsets) {
+          auto rowIndex = processedRowNums + offset;
+          const bool passed = !decodedFilterResult_.isNullAt(rowIndex) &&
+              decodedFilterResult_.valueAt<bool>(rowIndex);
+          if (passed) {
+            matchedRow = true;
           }
+        }
 
-          if (matchedRow) {
-            for (auto j = rightStart; j < rightEnd; ++j) {
-              auto rowIndex = processedRowNums + j - rightStart;
-              const bool passed = !decodedFilterResult_.isNullAt(rowIndex) &&
-                  decodedFilterResult_.valueAt<bool>(rowIndex);
-              joinTracker_->addMiss(rowIndex, true);
-            }
+        if (matchedRow) {
+          for (auto offset : offsets) {
+            auto rowIndex = processedRowNums + offset;
+            joinTracker_->addMiss(rowIndex, true);
+          }
+        } else {
+          // Only remain the one record for multi matched rows in right side.
+          for (auto i = 0; i < (offsets.size() - 1) ; ++i) {
+            auto rowIndex = processedRowNums + offsets[i];
+            joinTracker_->addMiss(rowIndex, true);
           }
         }
       }
+      matchedRow_ = false;
     }
   }
 
@@ -862,12 +909,19 @@ RowVectorPtr MergeJoin::getOutput() {
     auto output = doGetOutput();
     if (output != nullptr && output->size() > 0) {
       if (filter_) {
+        // std::cout << "before filter the output is " << output->toString(0, output->size()) << "\n";
         output = applyFilter(output);
+        // std::cout << "after filter the output is "
+        //             << output->toString(0, output->size()) << "\n";
 
         if (output != nullptr) {
           for (const auto [channel, _] : filterInputToOutputChannel_) {
             filterInput_->childAt(channel).reset();
           }
+
+          std::cout << "the smj output is " << output->toString(0, output->size())
+                  << "\n";
+          
           return output;
         }
 
@@ -1271,7 +1325,7 @@ RowVectorPtr MergeJoin::applyFilter(const RowVectorPtr& output) {
   if (joinTracker_) {
     const auto& filterRows = joinTracker_->matchingRows(numRows);
 
-    if (!filterRows.hasSelections()) {
+    if (!filterRows.hasSelections() && !isAntiJoin(joinType_)) {
       // No matches in the output, no need to evaluate the filter.
       return output;
     }
@@ -1354,6 +1408,12 @@ RowVectorPtr MergeJoin::applyFilter(const RowVectorPtr& output) {
     };
 
     for (auto i = 0; i < numRows; ++i) {
+      // if (output_ &&
+      //       output_->childAt(0)->asFlatVector<int64_t>()->valueAt(i) ==
+      //           1543943) {
+      //   std::cout << "the output is " << output_->toString(0, output_->size()) << "\n";     
+      // }
+
       if (filterRows.isValid(i)) {
         const bool passed = !decodedFilterResult_.isNullAt(i) &&
             decodedFilterResult_.valueAt<bool>(i);
