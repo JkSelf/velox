@@ -152,6 +152,10 @@ void InsertEnvVarFilename(
   std::vector<PlatformFilename> potential_paths;
   std::string file_name;
 
+  // Common paths
+  ARROW_ASSIGN_OR_RAISE(auto search_paths, MakeFilenameVector({"", "."}));
+
+#ifdef VELOX_ENABLE_HDFS
 // OS-specific file name
 #ifdef _WIN32
   file_name = "hdfs.dll";
@@ -161,12 +165,21 @@ void InsertEnvVarFilename(
   file_name = "libhdfs.so";
 #endif
 
-  // Common paths
-  ARROW_ASSIGN_OR_RAISE(auto search_paths, MakeFilenameVector({"", "."}));
-
   // Path from environment variable
   AppendEnvVarFilename("HADOOP_HOME", "lib/native", &search_paths);
   AppendEnvVarFilename("ARROW_LIBHDFS_DIR", &search_paths);
+#endif
+
+#ifdef VELOX_ENABLE_HDFS3
+// OS-specific file name
+#ifdef __APPLE__
+  file_name = "libhdfs3.dylib";
+#else
+  file_name = "libhdfs3.so";
+#endif
+  // Path from environment variable
+  AppendEnvVarFilename("HDFS3_HOME", &search_paths);
+#endif
 
   // All paths with file name
   for (const auto& path : search_paths) {
