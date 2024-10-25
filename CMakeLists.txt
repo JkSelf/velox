@@ -111,6 +111,7 @@ option(VELOX_ENABLE_S3 "Build S3 Connector" OFF)
 option(VELOX_ENABLE_GCS "Build GCS Connector" OFF)
 option(VELOX_ENABLE_ABFS "Build Abfs Connector" OFF)
 option(VELOX_ENABLE_HDFS "Build Hdfs Connector" OFF)
+option(VELOX_ENABLE_HDFS3 "Build Hdfs Connector" OFF)
 option(VELOX_ENABLE_PARQUET "Enable Parquet support" OFF)
 option(VELOX_ENABLE_ARROW "Enable Arrow support" OFF)
 option(VELOX_ENABLE_REMOTE_FUNCTIONS "Enable remote function support" OFF)
@@ -261,6 +262,12 @@ endif()
 if(VELOX_ENABLE_HDFS)
   add_definitions(-DVELOX_ENABLE_HDFS)
   # JVM libhdfs requires arrow dependency.
+  set(VELOX_ENABLE_ARROW ON)
+endif()
+
+if(VELOX_ENABLE_HDFS3)
+  add_definitions(-DVELOX_ENABLE_HDFS3)
+  # Libhdfs3 requires arrow dependency.
   set(VELOX_ENABLE_ARROW ON)
 endif()
 

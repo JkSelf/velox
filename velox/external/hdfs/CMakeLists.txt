@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-if(${VELOX_ENABLE_HDFS})
+if(${VELOX_ENABLE_HDFS} OR ${VELOX_ENABLE_HDFS3})
   velox_add_library(velox_external_hdfs ArrowHdfsInternal.cpp)
   velox_link_libraries(
         velox_external_hdfs
