@@ -398,6 +398,13 @@ bool MergeJoin::prepareOutput(
       return true;
     }
 
+    // If there is a new right, we still can't continue using it as the old one is the
+    // base for the current right.
+    if (right != currentRight_) {
+      return true;
+    }
+
+
     if (isRightJoin(joinType_) && right != currentRight_) {
       return true;
     }
