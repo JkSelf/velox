@@ -15,7 +15,7 @@
  */
 
 #include "velox/common/file/File.h"
-#include "velox/external/hdfs/hdfs.h"
+#include "velox/connectors/hive/storage_adapters/hdfs/hdfs.h"
 
 namespace facebook::velox {
 

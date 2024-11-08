@@ -22,10 +22,10 @@ if(VELOX_ENABLE_HDFS)
     PRIVATE
     HdfsFileSystem.cpp
     HdfsReadFile.cpp
-    HdfsWriteFile.cpp)
+    HdfsWriteFile.cpp
+    ArrowHdfsInternal.cpp)
   velox_link_libraries(
     velox_hdfs
-    velox_external_hdfs
     velox_dwio_common
     Folly::folly
     xsimd)

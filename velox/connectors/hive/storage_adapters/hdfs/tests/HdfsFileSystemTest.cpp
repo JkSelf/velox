@@ -26,7 +26,7 @@
 #include "velox/connectors/hive/storage_adapters/hdfs/RegisterHdfsFileSystem.h"
 #include "velox/core/QueryConfig.h"
 #include "velox/exec/tests/utils/TempFilePath.h"
-#include "velox/external/hdfs/ArrowHdfsInternal.h"
+#include "velox/connectors/hive/storage_adapters/hdfs/ArrowHdfsInternal.h"
 
 #include <unistd.h>
 
