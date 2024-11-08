@@ -1009,14 +1009,16 @@ RowVectorPtr MergeJoin::getOutput() {
       } else if (isAntiJoin(joinType_)) {
         output = filterOutputForAntiJoin(output);
         if (output) {
+          std::cout << "the output is " << output->toString(0, output->size())
+                    << "\n";
           return output;
         }
 
         // No rows survived the filter for anti join. Get more rows.
         continue;
       } else {
-        // std::cout << "the output is " << output->toString(0, output->size())
-        //           << "\n";
+        std::cout << "the output is " << output->toString(0, output->size())
+                  << "\n";
         return output;
       }
     }
@@ -1038,21 +1040,18 @@ RowVectorPtr MergeJoin::getOutput() {
         if (rightInput_) {
           // std::cout << "the right input is " << rightInput_->toString(0,
           // rightInput_->size()) << "\n";
-          if (isFullJoin(joinType_)) {
-            rightIndex_ = 0;
-          } else {
-            auto firstNonNullIndex = firstNonNull(rightInput_, rightKeys_);
-            if (isRightJoin(joinType_) && firstNonNullIndex > 0) {
-              prepareOutput(nullptr, rightInput_);
-              for (auto i = 0; i < firstNonNullIndex; ++i) {
-                addOutputRowForRightJoin(rightInput_, i);
-              }
+          auto firstNonNullIndex = firstNonNull(rightInput_, rightKeys_);
+          if ((isRightJoin(joinType_) || isFullJoin(joinType_)) &&
+              firstNonNullIndex > 0) {
+            prepareOutput(nullptr, rightInput_);
+            for (auto i = 0; i < firstNonNullIndex; ++i) {
+              addOutputRowForRightJoin(rightInput_, i);
             }
-            rightIndex_ = firstNonNullIndex;
-            if (rightIndex_ == rightInput_->size()) {
-              // Ran out of rows on the right side.
-              rightInput_ = nullptr;
-            }
+          }
+          rightIndex_ = firstNonNullIndex;
+          if (rightIndex_ == rightInput_->size()) {
+            // Ran out of rows on the right side.
+            rightInput_ = nullptr;
           }
         } else {
           noMoreRightInput_ = true;
