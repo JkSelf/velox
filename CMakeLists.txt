@@ -256,6 +256,8 @@ if(VELOX_ENABLE_ABFS)
 endif()
 
 if(VELOX_ENABLE_HDFS)
+  set(HADOOP_HOME $ENV{HADOOP_HOME})
+  message(STATUS "Found HADOOP HOME: ${HADOOP_HOME}")
   find_library(
     LIBHDFS3
     NAMES libhdfs.so libhdfs.dylib
