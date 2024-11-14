@@ -40,9 +40,8 @@ HdfsWriteFile::HdfsWriteFile(
       blockSize);
   VELOX_CHECK_NOT_NULL(
       hdfsFile_,
-      "Failed to open hdfs file: {}, with error: {}",
-      filePath_,
-      std::string(hdfsGetLastError()));
+      "Failed to open hdfs file: {}, with error: ",
+      filePath_);
 }
 
 HdfsWriteFile::~HdfsWriteFile() {
@@ -56,8 +55,7 @@ void HdfsWriteFile::close() {
   VELOX_CHECK_EQ(
       success,
       0,
-      "Failed to close hdfs file: {}",
-      std::string(hdfsGetLastError()));
+      "Failed to close hdfs file: ");
   hdfsFile_ = nullptr;
 }
 
@@ -68,7 +66,7 @@ void HdfsWriteFile::flush() {
       filePath_);
   int success = hdfsFlush(hdfsClient_, hdfsFile_);
   VELOX_CHECK_EQ(
-      success, 0, "Hdfs flush error: {}", std::string(hdfsGetLastError()));
+      success, 0, "Hdfs flush error: ");
 }
 
 void HdfsWriteFile::append(std::string_view data) {
@@ -84,8 +82,7 @@ void HdfsWriteFile::append(std::string_view data) {
   VELOX_CHECK_EQ(
       totalWrittenBytes,
       data.size(),
-      "Write failure in HDFSWriteFile::append {}",
-      std::string(hdfsGetLastError()));
+      "Write failure in HDFSWriteFile::append ");
 }
 
 uint64_t HdfsWriteFile::size() const {

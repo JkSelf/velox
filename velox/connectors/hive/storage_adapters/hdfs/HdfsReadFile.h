@@ -35,17 +35,15 @@ struct HdfsFile {
     handle_ = hdfsOpenFile(client, path.data(), O_RDONLY, 0, 0, 0);
     VELOX_CHECK_NOT_NULL(
         handle_,
-        "Unable to open file {}. got error: {}",
-        path,
-        hdfsGetLastError());
+        "Unable to open file {}. got error:",
+        path);
   }
 
   void seek(uint64_t offset) const {
     VELOX_CHECK_EQ(
         hdfsSeek(client_, handle_, offset),
         0,
-        "Cannot seek through HDFS file, error is : {}",
-        std::string(hdfsGetLastError()));
+        "Cannot seek through HDFS file, error is : ");
   }
 
   int32_t read(char* pos, uint64_t length) const {

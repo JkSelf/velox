@@ -258,8 +258,8 @@ endif()
 if(VELOX_ENABLE_HDFS)
   find_library(
     LIBHDFS3
-    NAMES libhdfs3.so libhdfs3.dylib
-    HINTS "${CMAKE_SOURCE_DIR}/hawq/depends/libhdfs3/_build/src/" REQUIRED)
+    NAMES libhdfs.so libhdfs.dylib
+    HINTS "${HADOOP_HOME}/lib/native/" REQUIRED)
   add_definitions(-DVELOX_ENABLE_HDFS3)
 endif()
 

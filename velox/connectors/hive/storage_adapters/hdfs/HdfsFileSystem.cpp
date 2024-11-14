@@ -36,9 +36,8 @@ class HdfsFileSystem::Impl {
     hdfsFreeBuilder(builder);
     VELOX_CHECK_NOT_NULL(
         hdfsClient_,
-        "Unable to connect to HDFS: {}, got error: {}.",
-        endpoint.identity(),
-        hdfsGetLastError());
+        "Unable to connect to HDFS: {}, got error:",
+        endpoint.identity());
   }
 
   ~Impl() {
