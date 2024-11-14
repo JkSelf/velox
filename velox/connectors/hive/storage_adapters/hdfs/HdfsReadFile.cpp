@@ -16,65 +16,20 @@
 
 #include "HdfsReadFile.h"
 #include <folly/synchronization/CallOnce.h>
-#include "velox/external/hdfs/ArrowHdfsInternal.h"
+#include <hdfs/hdfs.h>
 
 namespace facebook::velox {
 
-struct HdfsFile {
-  filesystems::arrow::io::internal::LibHdfsShim* driver_;
-  hdfsFS client_;
-  hdfsFile handle_;
-
-  HdfsFile() : driver_(nullptr), client_(nullptr), handle_(nullptr) {}
-  ~HdfsFile() {
-    if (handle_ && driver_->CloseFile(client_, handle_) == -1) {
-      LOG(ERROR) << "Unable to close file, errno: " << errno;
-    }
-  }
-
-  void open(
-      filesystems::arrow::io::internal::LibHdfsShim* driver,
-      hdfsFS client,
-      const std::string& path) {
-    driver_ = driver;
-    client_ = client;
-    handle_ = driver->OpenFile(client, path.data(), O_RDONLY, 0, 0, 0);
-    VELOX_CHECK_NOT_NULL(
-        handle_,
-        "Unable to open file {}. got error: {}",
-        path,
-        driver_->GetLastExceptionRootCause());
-  }
-
-  void seek(uint64_t offset) const {
-    VELOX_CHECK_EQ(
-        driver_->Seek(client_, handle_, offset),
-        0,
-        "Cannot seek through HDFS file, error is : {}",
-        driver_->GetLastExceptionRootCause());
-  }
-
-  int32_t read(char* pos, uint64_t length) const {
-    auto bytesRead = driver_->Read(client_, handle_, pos, length);
-    VELOX_CHECK(bytesRead >= 0, "Read failure in HDFSReadFile::preadInternal.");
-    return bytesRead;
-  }
-};
-
-HdfsReadFile::HdfsReadFile(
-    filesystems::arrow::io::internal::LibHdfsShim* driver,
-    hdfsFS hdfs,
-    const std::string_view path)
-    : driver_(driver), hdfsClient_(hdfs), filePath_(path) {
-  fileInfo_ = driver_->GetPathInfo(hdfsClient_, filePath_.data());
+HdfsReadFile::HdfsReadFile(hdfsFS hdfs, const std::string_view path)
+    : hdfsClient_(hdfs), filePath_(path) {
+  fileInfo_ = hdfsGetPathInfo(hdfsClient_, filePath_.data());
   if (fileInfo_ == nullptr) {
-    auto error = fmt::format(
-        "FileNotFoundException: Path {} does not exist.", filePath_);
+    auto error = hdfsGetLastError();
     auto errMsg = fmt::format(
         "Unable to get file path info for file: {}. got error: {}",
         filePath_,
         error);
-    if (error.find("FileNotFoundException") != std::string::npos) {
+    if (std::strstr(error, "FileNotFoundException") != nullptr) {
       VELOX_FILE_NOT_FOUND_ERROR(errMsg);
     }
     VELOX_FAIL(errMsg);
@@ -83,22 +38,19 @@ HdfsReadFile::HdfsReadFile(
 
 HdfsReadFile::~HdfsReadFile() {
   // should call hdfsFreeFileInfo to avoid memory leak
-  if (fileInfo_) {
-    driver_->FreeFileInfo(fileInfo_, 1);
-  }
+  hdfsFreeFileInfo(fileInfo_, 1);
 }
 
 void HdfsReadFile::preadInternal(uint64_t offset, uint64_t length, char* pos)
     const {
   checkFileReadParameters(offset, length);
-  folly::ThreadLocal<HdfsFile> file;
-  if (!file->handle_) {
-    file->open(driver_, hdfsClient_, filePath_);
+  if (!file_->handle_) {
+    file_->open(hdfsClient_, filePath_);
   }
-  file->seek(offset);
+  file_->seek(offset);
   uint64_t totalBytesRead = 0;
   while (totalBytesRead < length) {
-    auto bytesRead = file->read(pos, length - totalBytesRead);
+    auto bytesRead = file_->read(pos, length - totalBytesRead);
     totalBytesRead += bytesRead;
     pos += bytesRead;
   }
