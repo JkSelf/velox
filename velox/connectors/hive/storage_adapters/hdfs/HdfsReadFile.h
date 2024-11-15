@@ -15,6 +15,7 @@
  */
 
 #include "velox/common/file/File.h"
+#include "velox/external/hdfs/ArrowHdfsInternal.h"
 #include "velox/external/hdfs/hdfs.h"
 
 namespace facebook::velox {
@@ -22,6 +23,47 @@ namespace facebook::velox {
 namespace filesystems::arrow::io::internal {
 class LibHdfsShim;
 }
+
+struct HdfsFile {
+  filesystems::arrow::io::internal::LibHdfsShim* driver_;
+  hdfsFS client_;
+  hdfsFile handle_;
+
+  HdfsFile() : driver_(nullptr), client_(nullptr), handle_(nullptr) {}
+  ~HdfsFile() {
+    if (handle_ && driver_->CloseFile(client_, handle_) == -1) {
+      LOG(ERROR) << "Unable to close file, errno: " << errno;
+    }
+  }
+
+  void open(
+      filesystems::arrow::io::internal::LibHdfsShim* driver,
+      hdfsFS client,
+      const std::string& path) {
+    driver_ = driver;
+    client_ = client;
+    handle_ = driver->OpenFile(client, path.data(), O_RDONLY, 0, 0, 0);
+    VELOX_CHECK_NOT_NULL(
+        handle_,
+        "Unable to open file {}. got error: {}",
+        path,
+        driver_->GetLastExceptionRootCause());
+  }
+
+  void seek(uint64_t offset) const {
+    VELOX_CHECK_EQ(
+        driver_->Seek(client_, handle_, offset),
+        0,
+        "Cannot seek through HDFS file, error is : {}",
+        driver_->GetLastExceptionRootCause());
+  }
+
+  int32_t read(char* pos, uint64_t length) const {
+    auto bytesRead = driver_->Read(client_, handle_, pos, length);
+    VELOX_CHECK(bytesRead >= 0, "Read failure in HDFSReadFile::preadInternal.");
+    return bytesRead;
+  }
+};
 
 /**
  * Implementation of hdfs read file.
@@ -61,6 +103,7 @@ class HdfsReadFile final : public ReadFile {
   hdfsFS hdfsClient_;
   hdfsFileInfo* fileInfo_;
   std::string filePath_;
+  folly::ThreadLocal<HdfsFile> file_;
 };
 
 } // namespace facebook::velox
