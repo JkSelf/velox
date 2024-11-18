@@ -256,12 +256,12 @@ if(VELOX_ENABLE_ABFS)
 endif()
 
 if(VELOX_ENABLE_HDFS)
-  set(HADOOP_HOME $ENV{HADOOP_HOME})
-  message(STATUS "Found HADOOP HOME: ${HADOOP_HOME}")
+  # set(HADOOP_HOME $ENV{HADOOP_HOME})
+  # message(STATUS "Found HADOOP HOME: ${HADOOP_HOME}")
   find_library(
     LIBHDFS3
     NAMES libhdfs.so libhdfs.dylib
-    HINTS "${HADOOP_HOME}/lib/native/" REQUIRED)
+    HINTS "/home/sparkuser/hadoop/lib/native/" REQUIRED)
   add_definitions(-DVELOX_ENABLE_HDFS3)
 endif()
 
