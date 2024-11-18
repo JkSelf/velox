@@ -262,6 +262,9 @@ if(VELOX_ENABLE_HDFS)
     LIBHDFS3
     NAMES libhdfs.so libhdfs.dylib
     HINTS "${HADOOP_HOME}/lib/native/" REQUIRED)
+  if(NOT LIBHDFS3)
+    message(FATAL_ERROR "libhdfs3 not found in ${HADOOP_HOME}/lib/native/")
+  endif()
   add_definitions(-DVELOX_ENABLE_HDFS3)
 endif()
 
