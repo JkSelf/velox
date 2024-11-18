@@ -27,7 +27,7 @@ HdfsReadFile::HdfsReadFile(hdfsFS hdfs, const std::string_view path)
     auto errMsg = fmt::format(
         "Unable to get file path info for file: {}. got error: ",
         filePath_);
-    if (std::strstr(error, "FileNotFoundException") != nullptr) {
+    if (std::strstr(errMsg, "FileNotFoundException") != nullptr) {
       VELOX_FILE_NOT_FOUND_ERROR(errMsg);
     }
     VELOX_FAIL(errMsg);
