@@ -15,11 +15,11 @@
  */
 #include "velox/common/file/FileSystems.h"
 
-namespace facebook::velox::filesystems {
-
-namespace arrow::io::internal {
+namespace velox::filesystems::arrow::io::internal {
 class LibHdfsShim;
 }
+
+namespace facebook::velox::filesystems {
 
 struct HdfsServiceEndpoint {
   HdfsServiceEndpoint(const std::string& hdfsHost, const std::string& hdfsPort)
