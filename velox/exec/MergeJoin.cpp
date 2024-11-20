@@ -619,15 +619,15 @@ bool MergeJoin::addToOutputForLeftJoin() {
           rightEnd = rightStart + 1;
         }
 
-        if (input_ &&
-            input_->childAt(0)->asFlatVector<int64_t>()->valueAt(index_) ==
-                2499780) {
-          // std::cout << "the failed index_" << "\n";
-          // std::cout << "the left is " << left->toString(0, left->size()) <<
-          // "\n";
-          // std::cout << "the right is " << right->toString(0,
-          // right->size()) << "\n";
-        }
+        // if (input_ &&
+        //     input_->childAt(0)->asFlatVector<int64_t>()->valueAt(index_) ==
+        //         2499780) {
+        //   // std::cout << "the failed index_" << "\n";
+        //   // std::cout << "the left is " << left->toString(0, left->size()) <<
+        //   // "\n";
+        //   // std::cout << "the right is " << right->toString(0,
+        //   // right->size()) << "\n";
+        // }
 
         if ((isAntiJoin(joinType_) || isFullJoin(joinType_)) && filter_ &&
             (outputSize_ + (rightEnd - rightStart) > outputBatchSize_)) {
