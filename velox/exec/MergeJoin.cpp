@@ -193,11 +193,6 @@ bool MergeJoin::needsInput() const {
 }
 
 void MergeJoin::addInput(RowVectorPtr input) {
-  // if (input) {
-  //   std::cout << "the left input is " << input->toString(0, input->size()) <<
-  //   "\n";
-  // }
-
   input_ = std::move(input);
   index_ = 0;
 
@@ -619,16 +614,6 @@ bool MergeJoin::addToOutputForLeftJoin() {
           rightEnd = rightStart + 1;
         }
 
-        // if (input_ &&
-        //     input_->childAt(0)->asFlatVector<int64_t>()->valueAt(index_) ==
-        //         2499780) {
-        //   // std::cout << "the failed index_" << "\n";
-        //   // std::cout << "the left is " << left->toString(0, left->size()) <<
-        //   // "\n";
-        //   // std::cout << "the right is " << right->toString(0,
-        //   // right->size()) << "\n";
-        // }
-
         if ((isAntiJoin(joinType_) || isFullJoin(joinType_)) && filter_ &&
             (outputSize_ + (rightEnd - rightStart) > outputBatchSize_)) {
           // If we run out of space in the current output_, we will need to
@@ -689,23 +674,7 @@ bool MergeJoin::addToOutputForLeftJoin() {
             rightMatch_->setCursor(r, j);
             return true;
           }
-          // if (input_ &&
-          //   input_->childAt(0)->asFlatVector<int64_t>()->valueAt(i) ==
-          //       1528291) {
-          //   std::cout << "before the outputSize_ is " << outputSize_ << "\n";
-          //   std::cout << "before the 1496551 output is " <<
-          //   output_->toString(outputSize_ - 1, outputSize_) << "\n";
-          // }
           addOutputRow(left, i, right, j);
-          // std::cout << "the added output is " <<
-          // output_->toString(outputSize_ - 1, outputSize_) << "\n"; if (input_
-          // &&
-          //   input_->childAt(0)->asFlatVector<int64_t>()->valueAt(i) ==
-          //       1528291) {
-          //   std::cout << "the outputSize_ is " << outputSize_ << "\n";
-          //   std::cout << "the 1496551 output is " <<
-          //   output_->toString(outputSize_ - 1, outputSize_) << "\n";
-          // }
 
           offsets.emplace_back(matchedNumRows);
           ++matchedNumRows;
@@ -987,20 +956,12 @@ RowVectorPtr MergeJoin::getOutput() {
     auto output = doGetOutput();
     if (output != nullptr && output->size() > 0) {
       if (filter_) {
-        // std::cout << "before filter the output is " << output->toString(0,
-        // output->size()) << "\n";
         output = applyFilter(output);
-        // std::cout << "after filter the output is "
-        //             << output->toString(0, output->size()) << "\n";
-
+    
         if (output != nullptr) {
           for (const auto [channel, _] : filterInputToOutputChannel_) {
             filterInput_->childAt(channel).reset();
           }
-
-          std::cout << "the smj output is "
-                    << output->toString(0, output->size()) << "\n";
-
           return output;
         }
 
@@ -1009,16 +970,12 @@ RowVectorPtr MergeJoin::getOutput() {
       } else if (isAntiJoin(joinType_)) {
         output = filterOutputForAntiJoin(output);
         if (output) {
-          std::cout << "the output is " << output->toString(0, output->size())
-                    << "\n";
           return output;
         }
 
         // No rows survived the filter for anti join. Get more rows.
         continue;
       } else {
-        std::cout << "the output is " << output->toString(0, output->size())
-                  << "\n";
         return output;
       }
     }
@@ -1038,8 +995,6 @@ RowVectorPtr MergeJoin::getOutput() {
         }
 
         if (rightInput_) {
-          // std::cout << "the right input is " << rightInput_->toString(0,
-          // rightInput_->size()) << "\n";
           auto firstNonNullIndex = firstNonNull(rightInput_, rightKeys_);
           if ((isRightJoin(joinType_) || isFullJoin(joinType_)) &&
               firstNonNullIndex > 0) {
@@ -1430,12 +1385,6 @@ RowVectorPtr MergeJoin::applyFilter(const RowVectorPtr& output) {
     };
 
     for (auto i = 0; i < numRows; ++i) {
-      // if (output_ &&
-      //       output_->childAt(0)->asFlatVector<int64_t>()->valueAt(i) ==
-      //           1543943) {
-      //   std::cout << "the output is " << output_->toString(0,
-      //   output_->size()) << "\n";
-      // }
 
       if (filterRows.isValid(i)) {
         const bool passed = !decodedFilterResult_.isNullAt(i) &&
