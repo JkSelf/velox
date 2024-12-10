@@ -852,10 +852,10 @@ RowVectorPtr MergeJoin::doGetOutput() {
 
     // Not all rows from the last match fit in the output. Continue producing
     // results from the current match.
-    addToOutput();
-    if (outputSize_ > 0) {
-      output_->resize(outputSize_);
+    if (addToOutput()) {
       return std::move(output_);
+    } else {
+      previousLeftMatch_ = leftMatch_;
     }
   }
 
@@ -913,10 +913,10 @@ RowVectorPtr MergeJoin::doGetOutput() {
     VELOX_CHECK(leftMatch_->complete);
     VELOX_CHECK(rightMatch_ && rightMatch_->complete);
 
-    addToOutput();
-    if (outputSize_ > 0) {
-      output_->resize(outputSize_);
+    if (addToOutput()) {
       return std::move(output_);
+    } else {
+      previousLeftMatch_ = leftMatch_;
     }
   }
 
@@ -1154,10 +1154,10 @@ RowVectorPtr MergeJoin::doGetOutput() {
         rightInput_ = nullptr;
       }
 
-      addToOutput();
-      if (outputSize_ > 0) {
-        output_->resize(outputSize_);
+      if (addToOutput()) {
         return std::move(output_);
+      } else {
+        previousLeftMatch_ = leftMatch_;
       }
 
       if (!rightInput_) {
@@ -1311,6 +1311,10 @@ RowVectorPtr MergeJoin::applyFilter(const RowVectorPtr& output) {
     // (subsequent) left key. So we check if the last row in the batch has the
     // same left row number as the last key match.
     if (!leftMatch_ || !joinTracker_->isCurrentLeftMatch(numRows - 1)) {
+      joinTracker_->noMoreFilterResults(onMiss);
+    }
+
+    if (leftMatch_ && !previousLeftMatch_) {
       joinTracker_->noMoreFilterResults(onMiss);
     }
   } else {
