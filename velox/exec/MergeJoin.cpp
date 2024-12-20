@@ -817,21 +817,18 @@ RowVectorPtr MergeJoin::getOutput() {
         }
 
         if (rightInput_) {
-          if (isFullJoin(joinType_)) {
-            rightIndex_ = 0;
-          } else {
-            auto firstNonNullIndex = firstNonNull(rightInput_, rightKeys_);
-            if (isRightJoin(joinType_) && firstNonNullIndex > 0) {
-              prepareOutput(nullptr, rightInput_);
-              for (auto i = 0; i < firstNonNullIndex; ++i) {
-                addOutputRowForRightJoin(rightInput_, i);
-              }
+          auto firstNonNullIndex = firstNonNull(rightInput_, rightKeys_);
+          if ((isRightJoin(joinType_) || isFullJoin(joinType_)) &&
+              firstNonNullIndex > 0) {
+            prepareOutput(nullptr, rightInput_);
+            for (auto i = 0; i < firstNonNullIndex; ++i) {
+              addOutputRowForRightJoin(rightInput_, i);
             }
-            rightIndex_ = firstNonNullIndex;
-            if (finishedRightBatch()) {
-              // Ran out of rows on the right side.
-              rightInput_ = nullptr;
-            }
+          }
+          rightIndex_ = firstNonNullIndex;
+          if (finishedRightBatch()) {
+            // Ran out of rows on the right side.
+            rightInput_ = nullptr;
           }
         } else {
           noMoreRightInput_ = true;
