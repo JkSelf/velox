@@ -400,7 +400,7 @@ class MergeJoin : public Operator {
     /// filter failed for all matches of that row.
     template <typename TOnMiss>
     void noMoreFilterResults(TOnMiss onMiss) {
-      if (!currentRowPassed_) {
+      if (!currentRowPassed_ && currentRow_ >= 0) {
         onMiss(currentRow_, rawRightJoinRows_[currentRow_]);
       }
 

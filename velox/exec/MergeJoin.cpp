@@ -408,13 +408,13 @@ bool MergeJoin::prepareOutput(
       return true;
     }
 
-    if (right != currentRight_) {
-      return true;
-    }
-
     // If there is a new right, we need to flatten the dictionary.
     if (!isRightFlattened_ && right && currentRight_ != right) {
       flattenRightProjections();
+    }
+
+    if (right != currentRight_) {
+      return true;
     }
     return false;
   }
@@ -1101,7 +1101,7 @@ RowVectorPtr MergeJoin::doGetOutput() {
           isFullJoin(joinType_)) {
         // If output_ is currently wrapping a different buffer, return it
         // first.
-        if (prepareOutput(input_, nullptr)) {
+        if (prepareOutput(input_, rightInput_)) {
           output_->resize(outputSize_);
           return std::move(output_);
         }
@@ -1127,7 +1127,7 @@ RowVectorPtr MergeJoin::doGetOutput() {
       if (isRightJoin(joinType_) || isFullJoin(joinType_)) {
         // If output_ is currently wrapping a different buffer, return it
         // first.
-        if (prepareOutput(nullptr, rightInput_)) {
+        if (prepareOutput(input_, rightInput_)) {
           output_->resize(outputSize_);
           return std::move(output_);
         }
