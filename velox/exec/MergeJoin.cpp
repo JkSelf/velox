@@ -196,6 +196,8 @@ bool MergeJoin::needsInput() const {
 }
 
 void MergeJoin::addInput(RowVectorPtr input) {
+  // std::cout << "the left input is " << input->toString(0, input->size()) << "\n";
+  inputSize_ += input->size();
   input_ = std::move(input);
   index_ = 0;
 
@@ -629,6 +631,11 @@ bool MergeJoin::addToOutputForLeftJoin() {
           }
           addOutputRow(left, i, right, j);
         }
+
+        if (isLeftSemiFilterJoin(joinType_) && !filter_) {
+          // LeftSemiFilter produce each row from the left at most once.
+          break;
+        }
       }
     }
   }
@@ -806,6 +813,29 @@ RowVectorPtr MergeJoin::filterOutputForAntiJoin(const RowVectorPtr& output) {
   return wrap(numPassed, indices, output);
 }
 
+RowVectorPtr MergeJoin::mergeOutput(const RowVectorPtr& output) {
+  if (finalOutput_ == nullptr && output != nullptr) {
+    finalOutput_ =
+        BaseVector::create<RowVector>(output->type(), outputBatchSize_, pool());
+    finalOutputSize_ = 0;
+  }
+
+  if (output != nullptr) {
+    auto length = output->size();
+
+    std::vector<BaseVector::CopyRange> ranges = {{0, finalOutputSize_, length}};
+
+    finalOutput_->copyRanges(output.get(), ranges);
+    finalOutputSize_ += output->size();
+  }
+
+  if (finalOutputSize_ == outputBatchSize_ || (inputSize_ == processedSize_)) {
+    return std::move(finalOutput_);
+  } else {
+    return nullptr;
+  }
+}
+
 RowVectorPtr MergeJoin::getOutput() {
   // Make sure to have is-blocked or needs-input as true if returning null
   // output. Otherwise, Driver assumes the operator is finished.
@@ -843,6 +873,12 @@ RowVectorPtr MergeJoin::getOutput() {
         output = filterOutputForSemiJoin(output);
         if (output != nullptr && output->size() > 0) {
           return output;
+          // auto finalOutput = mergeOutput(output);
+          // if (finalOutput != nullptr && finalOutput->size() > 0) {
+          //   // std::cout << "the finalOutput->size() is " <<finalOutput->size() << "\n";
+          //   finalOutput->resize(finalOutputSize_);
+          //   return finalOutput;
+          // }
         }
 
         // No rows survived the filter for anti join. Get more rows.
@@ -867,6 +903,7 @@ RowVectorPtr MergeJoin::getOutput() {
         }
 
         if (rightInput_) {
+          // std::cout << "the right input is " << rightInput_->toString(0, rightInput_->size()) << "\n";
           auto firstNonNullIndex = firstNonNull(rightInput_, rightKeys_);
           if ((isRightJoin(joinType_) || isFullJoin(joinType_)) &&
               firstNonNullIndex > 0) {
@@ -915,11 +952,14 @@ RowVectorPtr MergeJoin::doGetOutput() {
       // Look for continuation of a match on the left and/or right sides.
       if (!findEndOfMatch(leftMatch_.value(), input_, leftKeys_)) {
         // Continue looking for the end of the match.
+
+        processedSize_ += leftMatch_->endIndex;
         input_ = nullptr;
         return nullptr;
       }
 
       if (leftMatch_->inputs.back() == input_) {
+        processedSize_ += leftMatch_->endIndex;
         index_ = leftMatch_->endIndex;
       }
     } else if (noMoreInput_) {
@@ -982,6 +1022,7 @@ RowVectorPtr MergeJoin::doGetOutput() {
           }
           addOutputRowForLeftJoin(input_, index_);
           ++index_;
+          processedSize_++;
 
           if (finishedLeftBatch()) {
             input_ = nullptr;
@@ -1111,8 +1152,11 @@ RowVectorPtr MergeJoin::doGetOutput() {
         }
         addOutputRowForLeftJoin(input_, index_);
         ++index_;
+        processedSize_++;
       } else {
+        auto previousIndex_ = index_;
         index_ = firstNonNull(input_, leftKeys_, index_ + 1);
+        processedSize_ += (index_ - previousIndex_);
       }
 
       if (finishedLeftBatch()) {
@@ -1156,6 +1200,8 @@ RowVectorPtr MergeJoin::doGetOutput() {
         ++endIndex;
       }
 
+      processedSize_ += (endIndex - index_);
+
       if (endIndex == input_->size()) {
         // Matches continue in subsequent input. Load all lazies.
         loadColumns(input_, *operatorCtx_->execCtx());
@@ -1192,6 +1238,7 @@ RowVectorPtr MergeJoin::doGetOutput() {
       }
 
       index_ = endIndex;
+
       if (isFullJoin(joinType_)) {
         rightIndex_ = endRightIndex;
       } else {

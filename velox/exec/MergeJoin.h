@@ -270,6 +270,8 @@ class MergeJoin : public Operator {
 
   RowVectorPtr filterOutputForSemiJoin(const RowVectorPtr& output);
 
+  RowVectorPtr mergeOutput(const RowVectorPtr& output);
+
   /// As we populate the results of the join, we track whether a given
   /// output row is a result of a match between left and right sides or a miss.
   /// We use JoinTracker::addMatch and addMiss methods for that.
@@ -545,6 +547,15 @@ class MergeJoin : public Operator {
 
   // Number of rows accumulated in the output_.
   vector_size_t outputSize_;
+
+  RowVectorPtr finalOutput_;
+
+  // Number of rows accumulated in the output_.
+  vector_size_t finalOutputSize_{0};
+
+  vector_size_t inputSize_{0};
+
+  vector_size_t processedSize_{0};
 
   // A future that will be completed when right side input becomes available.
   ContinueFuture futureRightSideInput_{ContinueFuture::makeEmpty()};
