@@ -627,6 +627,10 @@ bool MergeJoin::addToOutputForLeftJoin() {
           }
           addOutputRow(left, i, right, j);
         }
+
+        if (isLeftSemiFilterJoin(joinType_) && !filter_) {
+          break;
+        }
       }
     }
   }
@@ -709,6 +713,10 @@ bool MergeJoin::addToOutputForRightJoin() {
           } else {
             addOutputRow(left, j, right, i);
           }
+        }
+
+        if (isRightSemiFilterJoin(joinType_) && !filter_) {
+          break;
         }
       }
     }
