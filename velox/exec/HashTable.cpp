@@ -1817,6 +1817,73 @@ void HashTable<ignoreNullKeys>::prepareJoinTable(
 }
 
 template <bool ignoreNullKeys>
+void HashTable<ignoreNullKeys>::prepareSharedJoinTable(
+    std::vector<std::shared_ptr<BaseHashTable>> tables,
+    int8_t spillInputStartPartitionBit,
+    folly::Executor* executor) {
+  std::lock_guard<std::mutex> l(mutex_);
+  if (!prepared_) {
+    buildExecutor_ = executor;
+    otherSharedTables_.reserve(tables.size());
+    for (auto& table : tables) {
+      otherSharedTables_.emplace_back(std::shared_ptr<HashTable<ignoreNullKeys>>(
+          dynamic_cast<HashTable<ignoreNullKeys>*>(table.get())));
+    }
+
+    // If there are multiple tables, we need to merge the 'columnHasNulls' flags
+    // from the containers of each table and store them in the main table. This
+    // is necessary because, when extracting results, 'rows' may contain row
+    // pointers from multiple containers. We need to ensure the correctness of
+    // the 'columnHasNulls' flags.
+    for (int i = 0; i < rows_->columnTypes().size(); ++i) {
+      columnHasNulls_.emplace_back(rows_->columnHasNulls(i));
+      for (auto& other : otherSharedTables_) {
+        columnHasNulls_[i] =
+            columnHasNulls_[i] || other->rows()->columnHasNulls(i);
+      }
+    }
+
+    bool useValueIds = mayUseValueIds(*this);
+    if (useValueIds) {
+      for (auto& other : otherSharedTables_) {
+        if (!mayUseValueIds(*other)) {
+          useValueIds = false;
+          break;
+        }
+      }
+      if (useValueIds) {
+        for (auto& other : otherSharedTables_) {
+          for (auto i = 0; i < hashers_.size(); ++i) {
+            hashers_[i]->merge(*other->hashers_[i]);
+            if (!hashers_[i]->mayUseValueIds()) {
+              useValueIds = false;
+              break;
+            }
+          }
+          if (!useValueIds) {
+            break;
+          }
+        }
+      }
+    }
+    numDistinct_ = rows()->numRows();
+    for (const auto& other : otherSharedTables_) {
+      numDistinct_ += other->rows()->numRows();
+    }
+    if (!useValueIds) {
+      if (hashMode_ != HashMode::kHash) {
+        setHashMode(HashMode::kHash, 0, spillInputStartPartitionBit);
+      } else {
+        checkSize(0, true, spillInputStartPartitionBit);
+      }
+    } else {
+      decideHashMode(0, spillInputStartPartitionBit);
+    }
+    prepared_ = true;
+  }
+}
+
+template <bool ignoreNullKeys>
 inline uint64_t HashTable<ignoreNullKeys>::joinProjectedVarColumnsSize(
     const std::vector<vector_size_t>& columns,
     const char* row) const {

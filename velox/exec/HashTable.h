@@ -296,6 +296,11 @@ class BaseHashTable {
       int8_t spillInputStartPartitionBit,
       folly::Executor* executor = nullptr) = 0;
 
+  virtual void prepareSharedJoinTable(
+      std::vector<std::shared_ptr<BaseHashTable>> tables,
+      int8_t spillInputStartPartitionBit,
+      folly::Executor* executor = nullptr) = 0;
+
   /// Returns the memory footprint in bytes for any data structures
   /// owned by 'this'.
   virtual int64_t allocatedBytes() const = 0;
@@ -604,6 +609,11 @@ class HashTable : public BaseHashTable {
   /// and VectorHashers and decides the hash mode and representation.
   void prepareJoinTable(
       std::vector<std::unique_ptr<BaseHashTable>> tables,
+      int8_t spillInputStartPartitionBit,
+      folly::Executor* executor = nullptr) override;
+
+  void prepareSharedJoinTable(
+      std::vector<std::shared_ptr<BaseHashTable>> tables,
       int8_t spillInputStartPartitionBit,
       folly::Executor* executor = nullptr) override;
 
@@ -1084,6 +1094,9 @@ class HashTable : public BaseHashTable {
   // Owns the memory of multiple build side hash join tables that are
   // combined into a single probe hash table.
   std::vector<std::unique_ptr<HashTable<ignoreNullKeys>>> otherTables_;
+
+  std::vector<std::shared_ptr<HashTable<ignoreNullKeys>>> otherSharedTables_;
+
   // The allocators used for duplicate row vector allocations under parallel
   // join insert with one per each parallel join partition. These allocators
   // all allocate memory from the memory pool of the top level memory pool.

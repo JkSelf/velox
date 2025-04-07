@@ -87,12 +87,17 @@ HashBuild::HashBuild(
 
       // Init hash table.
       auto reusedTable = hashTableBuilder->hashTable();
-      reusedTable->prepareJoinTable(
-          {}, BaseHashTable::kNoSpillInputStartPartitionBit);
+      auto otherTables = hashTableBuilder->otherTables();
+      const bool allowParallelJoinBuild = !otherTables.empty();
+      reusedTable->prepareSharedJoinTable(
+          otherTables,
+          BaseHashTable::kNoSpillInputStartPartitionBit,
+          allowParallelJoinBuild ? operatorCtx_->task()->queryCtx()->executor()
+                                 : nullptr);
       joinBridge_->setHashTable(
           reusedTable,
           std::move(spillPartitions),
-          false,
+          hashTableBuilder->joinHasNullKeys(),
           std::move(tableSpillFunc));
     }
 

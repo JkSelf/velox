@@ -47,6 +47,14 @@ class HashTableBuilder {
     return joinHasNullKeys_;
   }
 
+  void setOtherTables(std::shared_ptr<BaseHashTable> table) {
+    otherTable_.push_back(table);
+  }
+
+  std::vector<std::shared_ptr<BaseHashTable>> otherTables() const {
+    return otherTable_;
+  }
+
  private:
   // Invoked to set up hash table to build.
   void setupTable();
@@ -96,6 +104,8 @@ class HashTableBuilder {
   const RowTypePtr& inputType_;
 
   memory::MemoryPool* pool_;
+
+  std::vector<std::shared_ptr<BaseHashTable>> otherTable_;
 };
 
 } // namespace facebook::velox::exec
