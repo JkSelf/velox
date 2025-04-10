@@ -325,6 +325,8 @@ class BaseHashTable {
   /// side. This is used for sizing the internal hash table.
   virtual uint64_t numDistinct() const = 0;
 
+  virtual bool reused() const = 0;
+
   /// Return a number of current stats that can help with debugging and
   /// profiling.
   virtual HashTableStats stats() const = 0;
@@ -482,7 +484,8 @@ class HashTable : public BaseHashTable {
       bool isJoinBuild,
       bool hasProbedFlag,
       uint32_t minTableSizeForParallelJoinBuild,
-      memory::MemoryPool* pool);
+      memory::MemoryPool* pool,
+      bool reused = false);
 
   ~HashTable() override = default;
 
@@ -507,7 +510,8 @@ class HashTable : public BaseHashTable {
       bool allowDuplicates,
       bool hasProbedFlag,
       uint32_t minTableSizeForParallelJoinBuild,
-      memory::MemoryPool* pool) {
+      memory::MemoryPool* pool,
+      bool reused = false) {
     return std::make_unique<HashTable>(
         std::move(hashers),
         std::vector<Accumulator>{},
@@ -516,7 +520,8 @@ class HashTable : public BaseHashTable {
         true, // isJoinBuild
         hasProbedFlag,
         minTableSizeForParallelJoinBuild,
-        pool);
+        pool,
+        reused);
   }
 
   void groupProbe(HashLookup& lookup, int8_t spillInputStartPartitionBit)
@@ -573,6 +578,10 @@ class HashTable : public BaseHashTable {
 
   uint64_t numDistinct() const override {
     return numDistinct_;
+  }
+
+  bool reused() const override {
+    return reused_;
   }
 
   HashTableStats stats() const override {
@@ -1103,6 +1112,12 @@ class HashTable : public BaseHashTable {
 
   friend class ProbeState;
   friend test::HashTableTestHelper<ignoreNullKeys>;
+
+  std::mutex mutex_;
+
+  bool prepared_{false};
+
+  bool reused_{false};
 };
 
 } // namespace facebook::velox::exec
