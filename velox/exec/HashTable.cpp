@@ -1343,23 +1343,45 @@ void HashTable<ignoreNullKeys>::rehash(
   raw_vector<uint64_t> hashes;
   hashes.resize(kHashBatchSize);
   char* groups[kHashBatchSize];
-  // A join build can have multiple payload tables. Loop over 'this'
-  // and the possible other tables and put all the data in the table
-  // of 'this'.
-  for (int32_t i = 0; i <= otherTables_.size(); ++i) {
-    RowContainerIterator iterator;
-    int32_t numGroups;
-    do {
-      numGroups = (i == 0 ? this : otherTables_[i - 1].get())
-                      ->rows()
-                      ->listRows(&iterator, kHashBatchSize, groups);
-      if (!insertBatch(
-              groups, numGroups, hashes, initNormalizedKeys || i != 0)) {
-        VELOX_CHECK_NE(hashMode_, HashMode::kHash);
-        setHashMode(HashMode::kHash, 0, spillInputStartPartitionBit);
-        return;
-      }
-    } while (numGroups > 0);
+
+  if (prepared_) {
+    // A join build can have multiple payload tables. Loop over 'this'
+    // and the possible other tables and put all the data in the table
+    // of 'this'.
+    for (int32_t i = 0; i <= otherSharedTables_.size(); ++i) {
+      RowContainerIterator iterator;
+      int32_t numGroups;
+      do {
+        numGroups = (i == 0 ? this : otherSharedTables_[i - 1].lock().get())
+                        ->rows()
+                        ->listRows(&iterator, kHashBatchSize, groups);
+        if (!insertBatch(
+                groups, numGroups, hashes, initNormalizedKeys || i != 0)) {
+          VELOX_CHECK_NE(hashMode_, HashMode::kHash);
+          setHashMode(HashMode::kHash, 0, spillInputStartPartitionBit);
+          return;
+        }
+      } while (numGroups > 0);
+    }
+  } else {
+    // A join build can have multiple payload tables. Loop over 'this'
+    // and the possible other tables and put all the data in the table
+    // of 'this'.
+    for (int32_t i = 0; i <= otherTables_.size(); ++i) {
+      RowContainerIterator iterator;
+      int32_t numGroups;
+      do {
+        numGroups = (i == 0 ? this : otherTables_[i - 1].get())
+                        ->rows()
+                        ->listRows(&iterator, kHashBatchSize, groups);
+        if (!insertBatch(
+                groups, numGroups, hashes, initNormalizedKeys || i != 0)) {
+          VELOX_CHECK_NE(hashMode_, HashMode::kHash);
+          setHashMode(HashMode::kHash, 0, spillInputStartPartitionBit);
+          return;
+        }
+      } while (numGroups > 0);
+    }
   }
 }
 
@@ -1608,11 +1630,20 @@ void HashTable<ignoreNullKeys>::decideHashMode(
 template <bool ignoreNullKeys>
 std::vector<RowContainer*> HashTable<ignoreNullKeys>::allRows() const {
   std::vector<RowContainer*> rowContainers;
-  rowContainers.reserve(otherTables_.size() + 1);
-  rowContainers.push_back(rows_.get());
-  for (auto& other : otherTables_) {
-    rowContainers.push_back(other->rows_.get());
+  if (prepared_) {
+    rowContainers.reserve(otherSharedTables_.size() + 1);
+    rowContainers.push_back(rows_.get());
+    for (auto& other : otherSharedTables_) {
+      rowContainers.push_back(other.lock()->rows_.get());
+    }
+  } else {
+    rowContainers.reserve(otherTables_.size() + 1);
+    rowContainers.push_back(rows_.get());
+    for (auto& other : otherTables_) {
+      rowContainers.push_back(other->rows_.get());
+    }
   }
+
   return rowContainers;
 }
 
@@ -1754,13 +1785,84 @@ void HashTable<ignoreNullKeys>::prepareJoinTable(
     std::vector<std::unique_ptr<BaseHashTable>> tables,
     int8_t spillInputStartPartitionBit,
     folly::Executor* executor) {
+  buildExecutor_ = executor;
+  otherTables_.reserve(tables.size());
+  for (auto& table : tables) {
+    otherTables_.emplace_back(std::unique_ptr<HashTable<ignoreNullKeys>>(
+        dynamic_cast<HashTable<ignoreNullKeys>*>(table.release())));
+  }
+
+  // If there are multiple tables, we need to merge the 'columnHasNulls' flags
+  // from the containers of each table and store them in the main table. This
+  // is necessary because, when extracting results, 'rows' may contain row
+  // pointers from multiple containers. We need to ensure the correctness of
+  // the 'columnHasNulls' flags.
+  for (int i = 0; i < rows_->columnTypes().size(); ++i) {
+    columnHasNulls_.emplace_back(rows_->columnHasNulls(i));
+    for (auto& other : otherTables_) {
+      columnHasNulls_[i] =
+          columnHasNulls_[i] || other->rows()->columnHasNulls(i);
+    }
+  }
+
+  bool useValueIds = mayUseValueIds(*this);
+  if (useValueIds) {
+    for (auto& other : otherTables_) {
+      if (!mayUseValueIds(*other)) {
+        useValueIds = false;
+        break;
+      }
+    }
+    if (useValueIds) {
+      for (auto& other : otherTables_) {
+        for (auto i = 0; i < hashers_.size(); ++i) {
+          hashers_[i]->merge(*other->hashers_[i]);
+          if (!hashers_[i]->mayUseValueIds()) {
+            useValueIds = false;
+            break;
+          }
+        }
+        if (!useValueIds) {
+          break;
+        }
+      }
+    }
+  }
+  numDistinct_ = rows()->numRows();
+  for (const auto& other : otherTables_) {
+    numDistinct_ += other->rows()->numRows();
+  }
+  if (!useValueIds) {
+    if (hashMode_ != HashMode::kHash) {
+      setHashMode(HashMode::kHash, 0, spillInputStartPartitionBit);
+    } else {
+      checkSize(0, true, spillInputStartPartitionBit);
+    }
+  } else {
+    decideHashMode(0, spillInputStartPartitionBit);
+  }
+}
+
+template <bool ignoreNullKeys>
+void HashTable<ignoreNullKeys>::prepareSharedJoinTable(
+    std::vector<std::weak_ptr<BaseHashTable>> tables,
+    int8_t spillInputStartPartitionBit,
+    folly::Executor* executor) {
   std::lock_guard<std::mutex> l(mutex_);
   if (!prepared_) {
+    prepared_ = true;
     buildExecutor_ = executor;
-    otherTables_.reserve(tables.size());
+    otherSharedTables_.reserve(tables.size());
     for (auto& table : tables) {
-      otherTables_.emplace_back(std::unique_ptr<HashTable<ignoreNullKeys>>(
-          dynamic_cast<HashTable<ignoreNullKeys>*>(table.release())));
+      // Convert the std::weak_ptr<BaseHashTable> to std::weak_ptr<HashTable>
+      std::shared_ptr<BaseHashTable> baseTable = table.lock();
+      auto hashTable =
+          dynamic_cast<HashTable<ignoreNullKeys>*>(baseTable.get());
+      std::shared_ptr<HashTable<ignoreNullKeys>> hashTableSharedPtr(
+          baseTable, hashTable);
+      std::weak_ptr<HashTable<ignoreNullKeys>> hashTableWeakPtr(
+          hashTableSharedPtr);
+      otherSharedTables_.emplace_back(hashTableWeakPtr);
     }
 
     // If there are multiple tables, we need to merge the 'columnHasNulls' flags
@@ -1770,24 +1872,24 @@ void HashTable<ignoreNullKeys>::prepareJoinTable(
     // the 'columnHasNulls' flags.
     for (int i = 0; i < rows_->columnTypes().size(); ++i) {
       columnHasNulls_.emplace_back(rows_->columnHasNulls(i));
-      for (auto& other : otherTables_) {
+      for (auto& other : otherSharedTables_) {
         columnHasNulls_[i] =
-            columnHasNulls_[i] || other->rows()->columnHasNulls(i);
+            columnHasNulls_[i] || other.lock()->rows()->columnHasNulls(i);
       }
     }
 
     bool useValueIds = mayUseValueIds(*this);
     if (useValueIds) {
-      for (auto& other : otherTables_) {
-        if (!mayUseValueIds(*other)) {
+      for (auto& other : otherSharedTables_) {
+        if (!mayUseValueIds(*(other.lock()))) {
           useValueIds = false;
           break;
         }
       }
       if (useValueIds) {
-        for (auto& other : otherTables_) {
+        for (auto& other : otherSharedTables_) {
           for (auto i = 0; i < hashers_.size(); ++i) {
-            hashers_[i]->merge(*other->hashers_[i]);
+            hashers_[i]->merge(*(other.lock())->hashers_[i]);
             if (!hashers_[i]->mayUseValueIds()) {
               useValueIds = false;
               break;
@@ -1800,8 +1902,8 @@ void HashTable<ignoreNullKeys>::prepareJoinTable(
       }
     }
     numDistinct_ = rows()->numRows();
-    for (const auto& other : otherTables_) {
-      numDistinct_ += other->rows()->numRows();
+    for (const auto& other : otherSharedTables_) {
+      numDistinct_ += other.lock()->rows()->numRows();
     }
     if (!useValueIds) {
       if (hashMode_ != HashMode::kHash) {
@@ -1812,7 +1914,6 @@ void HashTable<ignoreNullKeys>::prepareJoinTable(
     } else {
       decideHashMode(0, spillInputStartPartitionBit);
     }
-    prepared_ = true;
   }
 }
 
