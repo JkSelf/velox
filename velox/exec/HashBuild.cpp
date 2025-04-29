@@ -1245,12 +1245,13 @@ void HashBuild::close() {
     // by the last build thread that finishes building the hash table.
     std::lock_guard<std::mutex> l(mutex_);
     stateCleared_ = true;
+    std::cout << " HashBuild::close() and the hash build is " << this
+              << " and the joinBridge_ is " << joinBridge_.get()
+              << " and the table_ is " << table_.get() << " and the thread is "
+              << std::this_thread::get_id() << "\n";
     joinBridge_.reset();
     spiller_.reset();
     table_.reset();
-    std::cout << " HashBuild::close() and the hash build is " << this
-              << " and the joinBridge_ is " << joinBridge_.get()
-              << " and the table_ is " << table_.get() << "\n";
   }
 }
 
