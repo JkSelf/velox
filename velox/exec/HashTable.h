@@ -22,6 +22,9 @@
 #include "velox/exec/RowContainer.h"
 #include "velox/exec/VectorHasher.h"
 
+#include <iostream>
+#include <thread>
+
 namespace facebook::velox::exec {
 
 using PartitionBoundIndexType = int64_t;
@@ -487,7 +490,10 @@ class HashTable : public BaseHashTable {
       memory::MemoryPool* pool,
       bool reused = false);
 
-  ~HashTable() override = default;
+  ~HashTable() override {
+    std::cout << "~HashTable " << this << " and the thread is "
+              << std::this_thread::get_id() << "\n";
+  }
 
   static std::unique_ptr<HashTable> createForAggregation(
       std::vector<std::unique_ptr<VectorHasher>>&& hashers,

@@ -15,6 +15,8 @@
  */
 #pragma once
 
+#include <iostream>
+#include <thread>
 #include "velox/exec/HashJoinBridge.h"
 #include "velox/exec/HashTable.h"
 #include "velox/exec/RowContainer.h"
@@ -32,6 +34,10 @@ class HashTableBuilder {
           joinKeys,
       const RowTypePtr& inputType,
       memory::MemoryPool* pool);
+  ~HashTableBuilder() {
+    std::cout << "~HashTableBuilder " << this << " and the thread is "
+              << std::this_thread::get_id() << "\n";
+  }
 
   void addInput(RowVectorPtr input);
 

@@ -15,6 +15,8 @@
  */
 
 #include "velox/exec/HashBuild.h"
+#include <iostream>
+#include <thread>
 #include "velox/common/base/Counters.h"
 #include "velox/common/base/StatsReporter.h"
 #include "velox/common/testutil/TestValue.h"
@@ -73,10 +75,26 @@ HashBuild::HashBuild(
 
   joinBridge_->addBuilder();
 
+  std::cout << "line 78 creating HashBuild " << this
+            << " and the joinBridge_ is " << joinBridge_.get()
+            << " and the thread is " << std::this_thread::get_id() << "\n";
+  std::cout.setf(std::ios::unitbuf);
   if (reusedHashTableAddress_ != nullptr) {
     auto hashTableBuilder =
         reinterpret_cast<exec::HashTableBuilder*>(reusedHashTableAddress_);
+    std::cout << "line 83 creating HashBuild " << this
+              << " and the joinBridge_ is " << joinBridge_.get()
+              << " and the hashTableBuilder is " << hashTableBuilder
+              << " and the thread is " << std::this_thread::get_id() << "\n";
+
+    VELOX_CHECK_NOT_NULL(hashTableBuilder);
+    VELOX_CHECK_NOT_NULL(joinBridge_);
     joinBridge_->start();
+
+    std::cout << "line 89 creating HashBuild " << this
+              << " and the joinBridge_ is " << joinBridge_.get()
+              << " and the hashTableBuilder is " << hashTableBuilder
+              << " and the thread is " << std::this_thread::get_id() << "\n";
 
     if (hashTableBuilder->joinHasNullKeys() && isAntiJoin(joinType_) &&
         nullAware_ && !joinNode_->filter()) {
@@ -86,14 +104,36 @@ HashBuild::HashBuild(
       SpillPartitionSet spillPartitions;
 
       // Init hash table.
+      VELOX_CHECK_NOT_NULL(hashTableBuilder);
       auto reusedTable = hashTableBuilder->hashTable();
+
+      std::cout << "line 100 creating HashBuild " << this
+                << " and the joinBridge_ is " << joinBridge_.get()
+                << " and the hashTableBuilder is " << hashTableBuilder
+                << " and the hash table is " << reusedTable.get()
+                << " and the thread is " << std::this_thread::get_id() << "\n";
+
+      VELOX_CHECK_NOT_NULL(reusedTable);
       reusedTable->prepareJoinTable(
           {}, BaseHashTable::kNoSpillInputStartPartitionBit);
+      std::cout << "line 108 creating HashBuild " << this
+                << " and the joinBridge_ is " << joinBridge_.get()
+                << " and the hashTableBuilder is " << hashTableBuilder
+                << " and the hash table is " << reusedTable.get()
+                << " and the thread is " << std::this_thread::get_id() << "\n";
+
+      VELOX_CHECK_NOT_NULL(reusedTable);
+      VELOX_CHECK_NOT_NULL(joinBridge_);
       joinBridge_->setHashTable(
           reusedTable,
           std::move(spillPartitions),
           false,
           std::move(tableSpillFunc));
+      std::cout << "line 112 creating HashBuild " << this
+                << " and the joinBridge_ is " << joinBridge_.get()
+                << " and the hashTableBuilder is " << hashTableBuilder
+                << " and the hash table is " << reusedTable.get()
+                << " and the thread is " << std::this_thread::get_id() << "\n";
     }
 
   } else {
@@ -1208,6 +1248,9 @@ void HashBuild::close() {
     joinBridge_.reset();
     spiller_.reset();
     table_.reset();
+    std::cout << " HashBuild::close() and the hash build is " << this
+              << " and the joinBridge_ is " << joinBridge_.get()
+              << " and the table_ is " << table_.get() << "\n";
   }
 }
 
