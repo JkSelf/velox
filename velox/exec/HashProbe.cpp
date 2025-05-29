@@ -1069,7 +1069,7 @@ RowVectorPtr HashProbe::getOutputInternal(bool toSpillOutput) {
           }
         } else {
           joinBridge_->probeFinished();
-          if (table_ != nullptr) {
+          if (table_ != nullptr && !table_->reused()) {
             table_->clear(true);
           }
         }
