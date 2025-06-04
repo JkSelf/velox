@@ -330,6 +330,10 @@ class BaseHashTable {
 
   virtual bool reused() const = 0;
 
+  virtual bool joinHasNullKeys() const = 0;
+
+  virtual void setJoinHasNullKeys() = 0;
+
   /// Return a number of current stats that can help with debugging and
   /// profiling.
   virtual HashTableStats stats() const = 0;
@@ -588,6 +592,14 @@ class HashTable : public BaseHashTable {
 
   bool reused() const override {
     return reused_;
+  }
+
+  bool joinHasNullKeys() const override {
+    return joinHasNullKeys_;
+  }
+
+  void setJoinHasNullKeys() override {
+    joinHasNullKeys_ = true;
   }
 
   HashTableStats stats() const override {
@@ -1124,6 +1136,10 @@ class HashTable : public BaseHashTable {
   bool prepared_{false};
 
   bool reused_{false};
+
+  // True if this is a build side of an anti or left semi project join and has
+  // at least one entry with null join keys.
+  bool joinHasNullKeys_{false};
 };
 
 } // namespace facebook::velox::exec
