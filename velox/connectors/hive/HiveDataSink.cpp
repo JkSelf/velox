@@ -34,6 +34,8 @@
 #include <boost/uuid/uuid_generators.hpp>
 #include <boost/uuid/uuid_io.hpp>
 
+#include <regex>
+
 using facebook::velox::common::testutil::TestValue;
 
 namespace facebook::velox::connector::hive {
@@ -921,16 +923,25 @@ HiveWriterParameters HiveDataSink::getWriterParameters(
     const std::optional<std::string>& partition,
     std::optional<uint32_t> bucketId) const {
   auto [targetFileName, writeFileName] = getWriterFileNames(bucketId);
+ 
+  auto writePath = insertTableHandle_->locationHandle()->writePath();
 
+  std::regex uuidPattern("[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}");
+  std::smatch match;
+  std::string newUUID = "";
+  if (std::regex_search(writePath, match, uuidPattern)) {
+    newUUID = match.str();
+  }
+  
   return HiveWriterParameters{
       updateMode_,
       partition,
       targetFileName,
       makePartitionDirectory(
           insertTableHandle_->locationHandle()->targetPath(), partition),
-      writeFileName,
+      newUUID != "" ? std::regex_replace(writeFileName, uuidPattern, newUUID) : writeFileName,
       makePartitionDirectory(
-          insertTableHandle_->locationHandle()->writePath(), partition)};
+          std::regex_replace(writePath, uuidPattern, ""), partition)};
 }
 
 std::pair<std::string, std::string> HiveDataSink::getWriterFileNames(
