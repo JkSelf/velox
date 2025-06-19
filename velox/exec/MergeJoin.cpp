@@ -818,7 +818,7 @@ RowVectorPtr MergeJoin::getOutput() {
         continue;
       } else if (isAntiJoin(joinType_)) {
         output = filterOutputForAntiJoin(output);
-        if (output) {
+        if (output != nullptr && output->size() > 0) {
           return output;
         }
 
@@ -1261,6 +1261,9 @@ RowVectorPtr MergeJoin::applyFilter(const RowVectorPtr& output) {
   auto* rawIndices = indices->asMutable<vector_size_t>();
   vector_size_t numPassed = 0;
 
+  bool addPreviousBatchLastRow = false;
+  bool lastRowProcessed = false;
+
   if (joinTracker_) {
     const auto& filterRows = joinTracker_->matchingRows(numRows);
 
@@ -1274,9 +1277,6 @@ RowVectorPtr MergeJoin::applyFilter(const RowVectorPtr& output) {
     // If all matches for a given left-side row fail the filter, add a row to
     // the output with nulls for the right-side columns.
     const auto onMiss = [&](auto row) {
-      if (isAntiJoin(joinType_)) {
-        return;
-      }
       rawIndices[numPassed++] = row;
 
       if (isFullJoin(joinType_)) {
@@ -1346,6 +1346,12 @@ RowVectorPtr MergeJoin::applyFilter(const RowVectorPtr& output) {
       }
     };
 
+    if (isAntiJoin(joinType_) &&
+        (previousLastRowNumber_ != -1 &&
+         previousLastRowNumber_ != joinTracker_->currentLeftRowNumber(0))) {
+      addPreviousBatchLastRow = true;
+    }
+
     for (auto i = 0; i < numRows; ++i) {
       if (filterRows.isValid(i)) {
         const bool passed = !decodedFilterResult_.isNullAt(i) &&
@@ -1353,11 +1359,7 @@ RowVectorPtr MergeJoin::applyFilter(const RowVectorPtr& output) {
 
         joinTracker_->processFilterResult(i, passed, onMiss);
 
-        if (isAntiJoin(joinType_)) {
-          if (!passed) {
-            rawIndices[numPassed++] = i;
-          }
-        } else {
+        if (!isAntiJoin(joinType_)) {
           if (passed) {
             rawIndices[numPassed++] = i;
           }
@@ -1371,25 +1373,35 @@ RowVectorPtr MergeJoin::applyFilter(const RowVectorPtr& output) {
 
     // Every time we start a new left key match, `processFilterResult()` will
     // check if at least one row from the previous match passed the filter. If
-    // none did, it calls onMiss to add a record with null right projections to
-    // the output.
+    // none did, it calls onMiss to add a record with null right projections
+    // to the output.
     //
     // Before we leave the current buffer, since we may not have seen the next
-    // left key match yet, the last key match may still be pending to produce a
-    // row (because `processFilterResult()` was not called yet).
+    // left key match yet, the last key match may still be pending to produce
+    // a row (because `processFilterResult()` was not called yet).
     //
     // To handle this, we need to call `noMoreFilterResults()` unless the
-    // same current left key match may continue in the next buffer. So there are
-    // two cases to check:
+    // same current left key match may continue in the next buffer. So there
+    // are two cases to check:
     //
-    // 1. If leftMatch_ is nullopt, there for sure the next buffer will contain
-    // a different key match.
+    // 1. If leftMatch_ is nullopt, there for sure the next buffer will
+    // contain a different key match.
     //
     // 2. leftMatch_ may not be nullopt, but may be related to a different
     // (subsequent) left key. So we check if the last row in the batch has the
     // same left row number as the last key match.
+    //
+    // 3. If outputSize_ does not equal outputBatchSize_ and leftMatch_ is reset
+    // to null, the output will not be returned immediately. Instead, the next
+    // input will be processed, and leftMatch_ will be assigned a new value.
+    // Additionally, when handling the output from the previous batch, it is
+    // necessary to call the noMoreFilterResults method. This should be done by
+    // checking if previousOutput_ is null. This logic applies specifically to
+    // anti-join operations. In anti-joins, the passed value is processed
+    // within the processFilterResult method, unlike other types of joins.
     if (!leftMatch_ || !joinTracker_->isCurrentLeftMatch(numRows - 1)) {
       joinTracker_->noMoreFilterResults(onMiss);
+      lastRowProcessed = true;
     }
   } else {
     filterRows_.resize(numRows);
@@ -1405,25 +1417,71 @@ RowVectorPtr MergeJoin::applyFilter(const RowVectorPtr& output) {
     }
   }
 
-  if (numPassed == 0) {
-    // No rows passed.
-    return nullptr;
-  }
+  if (isAntiJoin(joinType_)) {
+    // Some, but not all rows passed.
+    auto wrappedOutput = wrap(numPassed, indices, output);
+    RowVectorPtr finalOutput = wrappedOutput;
 
-  if (numPassed == numRows) {
-    // All rows passed.
-    if (fullOuterOutput) {
-      return fullOuterOutput;
+    // Add the pervious batch last row in current output.
+    if (addPreviousBatchLastRow && previousLastRow_) {
+      finalOutput = BaseVector::create<RowVector>(
+          wrappedOutput->type(), wrappedOutput->size() + 1, pool());
+
+      for (auto j = 0; j < wrappedOutput->type()->size(); ++j) {
+        finalOutput->childAt(j)->copy(
+            previousLastRow_->childAt(j).get(), 0, 0, 1);
+        finalOutput->childAt(j)->copy(
+            wrappedOutput->childAt(j).get(), 1, 0, wrappedOutput->size());
+      }
     }
-    return output;
-  }
 
-  // Some, but not all rows passed.
-  if (fullOuterOutput) {
-    return wrap(numPassed, indices, fullOuterOutput);
-  }
+    previousLastRow_.reset();
 
-  return wrap(numPassed, indices, output);
+    if (!lastRowProcessed && joinTracker_ &&
+        joinTracker_->matchingRows(numRows).isValid(numRows - 1)) {
+      bool isLastRowPassed = !decodedFilterResult_.isNullAt(numRows - 1) &&
+          decodedFilterResult_.valueAt<bool>(numRows - 1);
+      if (!isLastRowPassed && !joinTracker_->currentRowPassed()) {
+        BufferPtr lastRowIndices = allocateIndices(1, pool());
+        auto* rawlastRowIndices = lastRowIndices->asMutable<vector_size_t>();
+        rawlastRowIndices[0] = numRows - 1;
+        previousLastRow_ = wrap(1, lastRowIndices, output);
+
+        auto onMiss = [&](auto row) {};
+        joinTracker_->noMoreFilterResults(onMiss);
+
+        previousLastRowNumber_ =
+            joinTracker_->currentLeftRowNumber(numRows - 1);
+      }
+    }
+
+    if (numPassed == 0 && finalOutput->size() == 0) {
+      // No rows passed.
+      return nullptr;
+    }
+
+    return finalOutput;
+  } else {
+    if (numPassed == 0) {
+      // No rows passed.
+      return nullptr;
+    }
+
+    if (numPassed == numRows) {
+      // All rows passed.
+      if (fullOuterOutput) {
+        return fullOuterOutput;
+      }
+      return output;
+    }
+
+    // Some, but not all rows passed.
+    if (fullOuterOutput) {
+      return wrap(numPassed, indices, fullOuterOutput);
+    }
+
+    return wrap(numPassed, indices, output);
+  }
 }
 
 void MergeJoin::evaluateFilter(const SelectivityVector& rows) {

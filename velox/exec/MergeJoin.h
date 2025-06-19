@@ -438,6 +438,14 @@ class MergeJoin : public Operator {
 
     void reset();
 
+    vector_size_t currentLeftRowNumber(vector_size_t row) const {
+      return rawLeftRowNumbers_[row];
+    }
+
+    bool currentRowPassed() const {
+      return currentRowPassed_;
+    }
+
    private:
     // A subset of output rows where left side matched right side on the join
     // keys. Used in filter evaluation.
@@ -568,5 +576,12 @@ class MergeJoin : public Operator {
 
   bool leftHasDrained_{false};
   bool rightHasDrained_{false};
+
+  // For anti join, when returning the next batch, if the last record of the
+  // previous batch and the first record of the next batch are not in the same
+  // group, we need to retain the last record of the previous batch as the first
+  // result of the current output.
+  RowVectorPtr previousLastRow_;
+  vector_size_t previousLastRowNumber_{-1};
 };
 } // namespace facebook::velox::exec
