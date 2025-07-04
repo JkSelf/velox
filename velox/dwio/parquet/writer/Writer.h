@@ -28,6 +28,7 @@
 #include "velox/dwio/parquet/writer/arrow/util/Compression.h"
 #include "velox/vector/ComplexVector.h"
 #include "velox/vector/arrow/Bridge.h"
+#include "arrow/memory_pool.h"
 
 namespace facebook::velox::parquet {
 
@@ -112,6 +113,8 @@ struct WriterOptions : public dwio::common::WriterOptions {
   std::optional<bool> enableDictionary;
   std::optional<bool> useParquetDataPageV2;
   std::optional<std::string> createdBy;
+
+  std::shared_ptr<arrow::MemoryPool> arrowMemoryPool;
 
   // Parsing session and hive configs.
 
@@ -204,6 +207,8 @@ class Writer : public dwio::common::Writer {
   // Pool for 'stream_'.
   std::shared_ptr<memory::MemoryPool> pool_;
   std::shared_ptr<memory::MemoryPool> generalPool_;
+  std::shared_ptr<arrow::MemoryPool> arrowMemoryPool_;
+
 
   // Temporary Arrow stream for capturing the output.
   std::shared_ptr<ArrowDataBufferSink> stream_;
