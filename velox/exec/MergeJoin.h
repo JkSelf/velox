@@ -385,6 +385,9 @@ class MergeJoin : public Operator {
     // first row.
     void addMiss(vector_size_t outputIndex) {
       matchingRows_.setValid(outputIndex, false);
+      // addMiss should be called for left-side row that has no match on the
+      // right-side. This implies it must be a new row.
+      rawLeftRowNumbers_[outputIndex] = ++lastLeftRowNumber_;
       resetLastVector();
     }
 
@@ -443,7 +446,6 @@ class MergeJoin : public Operator {
       }
 
       currentRow_ = -1;
-      currentRowPassed_ = false;
     }
 
     void reset();
