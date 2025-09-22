@@ -237,7 +237,7 @@ int32_t MergeJoin::compare(
     static const CompareFlags kCompareFlags = {
         .equalsOnly = true,
         .nullHandlingMode =
-            CompareFlags::NullHandlingMode::kNullAsIndeterminate};
+            CompareFlags::NullHandlingMode::kNullAsValue};
     const auto compare = batch->childAt(keys[i])->compare(
         otherBatch->childAt(otherKeys[i]).get(),
         index,
