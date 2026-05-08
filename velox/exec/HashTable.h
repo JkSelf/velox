@@ -780,6 +780,20 @@ class HashTable : public BaseHashTable {
   /// are left till the end of the table.
   std::string toString(int64_t startBucket, int64_t numBuckets = 1) const;
 
+  /// Serializes the hash table to an output stream.
+  /// This includes the hash table structure, metadata, and all row data.
+  /// @param out Output stream to write serialized data
+  void serialize(std::ostream& out) const;
+
+  /// Deserializes the hash table from an input stream.
+  /// This reconstructs the hash table structure, metadata, and all row data.
+  /// @param in Input stream to read serialized data from
+  /// @param pool Memory pool for allocating deserialized data
+  /// @return A new HashTable instance with deserialized data
+  static std::unique_ptr<HashTable<ignoreNullKeys>> deserialize(
+      std::istream& in,
+      memory::MemoryPool* pool);
+
   /// Invoked to check the consistency of the internal state. The function scans
   /// all the table slots to check if the relevant slot counting are correct
   /// such as the number of used slots ('numDistinct_') and the number of
