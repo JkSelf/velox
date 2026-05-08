@@ -148,6 +148,7 @@ set(
   AssignUniqueIdTest.cpp
   FilterProjectTest.cpp
   AsyncConnectorTest.cpp
+  HashTableSerializationTest.cpp
 )
 
 set(
