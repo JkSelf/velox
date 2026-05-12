@@ -23,6 +23,7 @@
 
 #include "velox/type/Filter.h"
 
+#include "velox/common/EnumDefine.h"
 #include "velox/common/serialization/NativeSerdeIO.h"
 
 namespace facebook::velox::common {
