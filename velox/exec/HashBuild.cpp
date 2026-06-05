@@ -142,7 +142,9 @@ bool HashBuild::setupCachedHashTable() {
     return false;
   }
 
-  cacheKey_ = planNodeId();
+  // cacheKey_ = planNodeId();
+  const auto& queryId = operatorCtx_->task()->queryCtx()->queryId();
+  cacheKey_ = fmt::format("{}:{}", queryId, planNodeId());
 
   // Get or create the cache entry (which includes the pool).
   // If another task is already building, future_ will be set.
