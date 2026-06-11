@@ -24,7 +24,7 @@
 #include "velox/exec/Task.h"
 #include "velox/exec/VectorHasher.h"
 #include "velox/expression/FieldReference.h"
-
+#include <iostream>
 using facebook::velox::common::testutil::TestValue;
 
 namespace facebook::velox::exec {
@@ -170,7 +170,7 @@ bool HashBuild::setupCachedHashTable() {
   // cacheKey_ = planNodeId();
   const auto& queryId = operatorCtx_->task()->queryCtx()->queryId();
   cacheKey_ = fmt::format("{}:{}", queryId, planNodeId());
-
+  std::cout << "the cacheKey_ in HashBuild is " << cacheKey_ << "\n";
   // Get or create the cache entry (which includes the pool).
   // If another task is already building, future_ will be set.
   auto* cache = HashTableCache::instance();
