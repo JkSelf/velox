@@ -780,11 +780,6 @@ class HashTable : public BaseHashTable {
   /// are left till the end of the table.
   std::string toString(int64_t startBucket, int64_t numBuckets = 1) const;
 
-  /// Serializes the hash table to an output stream.
-  /// This includes the hash table structure, metadata, and all row data.
-  /// @param out Output stream to write serialized data
-  void serialize(std::ostream& out) const;
-
   /// Returns the exact serialized size in bytes for the current hash table.
   size_t serializedSize() const;
 
@@ -792,15 +787,6 @@ class HashTable : public BaseHashTable {
   /// @param data Destination buffer
   /// @param size Size of destination buffer in bytes. Must equal serializedSize().
   void serializeTo(void* data, size_t size) const;
-
-  /// Deserializes the hash table from an input stream.
-  /// This reconstructs the hash table structure, metadata, and all row data.
-  /// @param in Input stream to read serialized data from
-  /// @param pool Memory pool for allocating deserialized data
-  /// @return A new HashTable instance with deserialized data
-  static std::unique_ptr<HashTable<ignoreNullKeys>> deserialize(
-      std::istream& in,
-      memory::MemoryPool* pool);
 
   /// Deserializes the hash table directly from a contiguous memory buffer.
   /// @param data Serialized hash table bytes

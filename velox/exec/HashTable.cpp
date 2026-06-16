@@ -2574,8 +2574,6 @@ void HashTable<ignoreNullKeys>::prepareForJoinProbe(
 }
 namespace {
 
-constexpr size_t kSerdeIOBufferSize = 64 * 1024;
-
 class CountingWriter {
  public:
   void write(const void*, size_t size) {
@@ -2836,13 +2834,9 @@ void HashTable<ignoreNullKeys>::serializeImpl(Writer& writer) const {
     const auto stateSize = hasher->serializedStateSize();
     writeValue(stateSize);
     if (stateSize > 0) {
-      if constexpr (std::is_same_v<std::decay_t<Writer>, common::NativeBufferedWriter>) {
-        hasher->serializeState(writer);
-      } else {
-        auto state = hasher->serializeState();
-        VELOX_CHECK_EQ(state.size(), stateSize, "Serialized VectorHasher state size mismatch");
-        writer.write(state.data(), state.size());
-      }
+      auto state = hasher->serializeState();
+      VELOX_CHECK_EQ(state.size(), stateSize, "Serialized VectorHasher state size mismatch");
+      writer.write(state.data(), state.size());
     }
   }
 
@@ -2855,12 +2849,6 @@ void HashTable<ignoreNullKeys>::serializeImpl(Writer& writer) const {
 
   // Flush explicitly so write failures surface at the serialization call site.
   writer.flush();
-}
-
-template <bool ignoreNullKeys>
-void HashTable<ignoreNullKeys>::serialize(std::ostream& out) const {
-  common::NativeBufferedWriter writer(out, kSerdeIOBufferSize);
-  serializeImpl(writer);
 }
 
 template <bool ignoreNullKeys>
@@ -3173,14 +3161,6 @@ std::unique_ptr<HashTable<ignoreNullKeys>> HashTable<ignoreNullKeys>::deserializ
 }
 
 template <bool ignoreNullKeys>
-std::unique_ptr<HashTable<ignoreNullKeys>> HashTable<ignoreNullKeys>::deserialize(
-    std::istream& in,
-    memory::MemoryPool* pool) {
-  common::NativeBufferedReader reader(in, kSerdeIOBufferSize);
-  return deserializeImpl(reader, pool);
-}
-
-template <bool ignoreNullKeys>
 std::unique_ptr<HashTable<ignoreNullKeys>> HashTable<ignoreNullKeys>::deserializeFrom(
     const void* data,
     size_t size,
@@ -3193,21 +3173,11 @@ std::unique_ptr<HashTable<ignoreNullKeys>> HashTable<ignoreNullKeys>::deserializ
   return table;
 }
 
-template void HashTable<true>::serialize(std::ostream& out) const;
-template void HashTable<false>::serialize(std::ostream& out) const;
-
 template size_t HashTable<true>::serializedSize() const;
 template size_t HashTable<false>::serializedSize() const;
 
 template void HashTable<true>::serializeTo(void* data, size_t size) const;
 template void HashTable<false>::serializeTo(void* data, size_t size) const;
-
-template std::unique_ptr<HashTable<true>> HashTable<true>::deserialize(
-    std::istream& in,
-    memory::MemoryPool* pool);
-template std::unique_ptr<HashTable<false>> HashTable<false>::deserialize(
-    std::istream& in,
-    memory::MemoryPool* pool);
 
 template std::unique_ptr<HashTable<true>> HashTable<true>::deserializeFrom(
     const void* data,
