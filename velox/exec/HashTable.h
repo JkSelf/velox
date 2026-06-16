@@ -785,6 +785,14 @@ class HashTable : public BaseHashTable {
   /// @param out Output stream to write serialized data
   void serialize(std::ostream& out) const;
 
+  /// Returns the exact serialized size in bytes for the current hash table.
+  size_t serializedSize() const;
+
+  /// Serializes the hash table directly to a caller-provided memory buffer.
+  /// @param data Destination buffer
+  /// @param size Size of destination buffer in bytes. Must equal serializedSize().
+  void serializeTo(void* data, size_t size) const;
+
   /// Deserializes the hash table from an input stream.
   /// This reconstructs the hash table structure, metadata, and all row data.
   /// @param in Input stream to read serialized data from
@@ -792,6 +800,16 @@ class HashTable : public BaseHashTable {
   /// @return A new HashTable instance with deserialized data
   static std::unique_ptr<HashTable<ignoreNullKeys>> deserialize(
       std::istream& in,
+      memory::MemoryPool* pool);
+
+  /// Deserializes the hash table directly from a contiguous memory buffer.
+  /// @param data Serialized hash table bytes
+  /// @param size Serialized hash table size in bytes
+  /// @param pool Memory pool for allocating deserialized data
+  /// @return A new HashTable instance with deserialized data
+  static std::unique_ptr<HashTable<ignoreNullKeys>> deserializeFrom(
+      const void* data,
+      size_t size,
       memory::MemoryPool* pool);
 
   /// Invoked to check the consistency of the internal state. The function scans
@@ -828,6 +846,14 @@ class HashTable : public BaseHashTable {
   }
 
  private:
+  template <typename Writer>
+  void serializeImpl(Writer& writer) const;
+
+  template <typename Reader>
+  static std::unique_ptr<HashTable<ignoreNullKeys>> deserializeImpl(
+      Reader& reader,
+      memory::MemoryPool* pool);
+
   // Enables debug stats for collisions for debug build.
 #ifdef NDEBUG
   static constexpr bool kTrackLoads = false;

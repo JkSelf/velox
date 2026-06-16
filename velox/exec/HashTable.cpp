@@ -2576,10 +2576,70 @@ namespace {
 
 constexpr size_t kSerdeIOBufferSize = 64 * 1024;
 
+class CountingWriter {
+ public:
+  void write(const void*, size_t size) {
+    size_ += size;
+  }
+
+  template <typename T>
+  void writeValue(T value) {
+    static_assert(std::is_trivially_copyable_v<T>);
+    write(&value, sizeof(value));
+  }
+
+  void flush() {}
+
+  size_t size() const {
+    return size_;
+  }
+
+ private:
+  size_t size_{0};
+};
+
+class MemoryWriter {
+ public:
+  MemoryWriter(void* data, size_t size)
+      : begin_(static_cast<char*>(data)),
+        current_(static_cast<char*>(data)),
+        end_(begin_ + size) {
+    VELOX_CHECK_NOT_NULL(data, "Serialized hash table destination cannot be null");
+  }
+
+  void write(const void* data, size_t size) {
+    VELOX_CHECK_LE(size, remaining(), "Insufficient space in serialized hash table buffer");
+    std::memcpy(current_, data, size);
+    current_ += size;
+  }
+
+  template <typename T>
+  void writeValue(T value) {
+    static_assert(std::is_trivially_copyable_v<T>);
+    write(&value, sizeof(value));
+  }
+
+  void flush() {}
+
+  size_t writtenSize() const {
+    return static_cast<size_t>(current_ - begin_);
+  }
+
+ private:
+  size_t remaining() const {
+    return static_cast<size_t>(end_ - current_);
+  }
+
+  char* begin_;
+  char* current_;
+  char* end_;
+};
+
 } // namespace
 
 template <bool ignoreNullKeys>
-void HashTable<ignoreNullKeys>::serialize(std::ostream& out) const {
+template <typename Writer>
+void HashTable<ignoreNullKeys>::serializeImpl(Writer& writer) const {
   VELOX_CHECK(isJoinBuild_, "Only join-build hash tables are supported");
   uint64_t totalRows = rows_ != nullptr ? rows_->numRows() : 0;
   for (const auto& other : otherTables_) {
@@ -2591,7 +2651,6 @@ void HashTable<ignoreNullKeys>::serialize(std::ostream& out) const {
       totalRows == 0 || table_ != nullptr,
       "Serialization requires a prepared join table");
 
-  common::NativeBufferedWriter writer(out, kSerdeIOBufferSize);
   LOG(INFO) << "Serializing HashTable: "
             << const_cast<HashTable<ignoreNullKeys>*>(this)->toString();
 
@@ -2777,7 +2836,13 @@ void HashTable<ignoreNullKeys>::serialize(std::ostream& out) const {
     const auto stateSize = hasher->serializedStateSize();
     writeValue(stateSize);
     if (stateSize > 0) {
-      hasher->serializeState(writer);
+      if constexpr (std::is_same_v<std::decay_t<Writer>, common::NativeBufferedWriter>) {
+        hasher->serializeState(writer);
+      } else {
+        auto state = hasher->serializeState();
+        VELOX_CHECK_EQ(state.size(), stateSize, "Serialized VectorHasher state size mismatch");
+        writer.write(state.data(), state.size());
+      }
     }
   }
 
@@ -2793,13 +2858,31 @@ void HashTable<ignoreNullKeys>::serialize(std::ostream& out) const {
 }
 
 template <bool ignoreNullKeys>
-std::unique_ptr<HashTable<ignoreNullKeys>>
-HashTable<ignoreNullKeys>::deserialize(
-    std::istream& in,
-    memory::MemoryPool* pool) {
-  common::NativeBufferedReader reader(in, kSerdeIOBufferSize);
+void HashTable<ignoreNullKeys>::serialize(std::ostream& out) const {
+  common::NativeBufferedWriter writer(out, kSerdeIOBufferSize);
+  serializeImpl(writer);
+}
 
-  auto readValue = [&]<typename T>() -> T { return reader.readValue<T>(); };
+template <bool ignoreNullKeys>
+size_t HashTable<ignoreNullKeys>::serializedSize() const {
+  CountingWriter writer;
+  serializeImpl(writer);
+  return writer.size();
+}
+
+template <bool ignoreNullKeys>
+void HashTable<ignoreNullKeys>::serializeTo(void* data, size_t size) const {
+  MemoryWriter writer(data, size);
+  serializeImpl(writer);
+  VELOX_CHECK_EQ(writer.writtenSize(), size, "Hash table serialized size mismatch");
+}
+
+template <bool ignoreNullKeys>
+template <typename Reader>
+std::unique_ptr<HashTable<ignoreNullKeys>> HashTable<ignoreNullKeys>::deserializeImpl(
+    Reader& reader,
+    memory::MemoryPool* pool) {
+  auto readValue = [&]<typename T>() -> T { return reader.template readValue<T>(); };
 
   // Read and validate magic and version.
   uint32_t magic = readValue.template operator()<uint32_t>();
@@ -3089,14 +3172,50 @@ HashTable<ignoreNullKeys>::deserialize(
   return table;
 }
 
+template <bool ignoreNullKeys>
+std::unique_ptr<HashTable<ignoreNullKeys>> HashTable<ignoreNullKeys>::deserialize(
+    std::istream& in,
+    memory::MemoryPool* pool) {
+  common::NativeBufferedReader reader(in, kSerdeIOBufferSize);
+  return deserializeImpl(reader, pool);
+}
+
+template <bool ignoreNullKeys>
+std::unique_ptr<HashTable<ignoreNullKeys>> HashTable<ignoreNullKeys>::deserializeFrom(
+    const void* data,
+    size_t size,
+    memory::MemoryPool* pool) {
+  VELOX_CHECK_NOT_NULL(data, "Serialized hash table data cannot be null");
+  common::NativeStringReader reader(
+      std::string_view(static_cast<const char*>(data), size));
+  auto table = deserializeImpl(reader, pool);
+  VELOX_CHECK(reader.atEnd(), "Trailing bytes after hash table deserialization");
+  return table;
+}
+
 template void HashTable<true>::serialize(std::ostream& out) const;
 template void HashTable<false>::serialize(std::ostream& out) const;
+
+template size_t HashTable<true>::serializedSize() const;
+template size_t HashTable<false>::serializedSize() const;
+
+template void HashTable<true>::serializeTo(void* data, size_t size) const;
+template void HashTable<false>::serializeTo(void* data, size_t size) const;
 
 template std::unique_ptr<HashTable<true>> HashTable<true>::deserialize(
     std::istream& in,
     memory::MemoryPool* pool);
 template std::unique_ptr<HashTable<false>> HashTable<false>::deserialize(
     std::istream& in,
+    memory::MemoryPool* pool);
+
+template std::unique_ptr<HashTable<true>> HashTable<true>::deserializeFrom(
+    const void* data,
+    size_t size,
+    memory::MemoryPool* pool);
+template std::unique_ptr<HashTable<false>> HashTable<false>::deserializeFrom(
+    const void* data,
+    size_t size,
     memory::MemoryPool* pool);
 
 } // namespace facebook::velox::exec
